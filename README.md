@@ -1,12 +1,16 @@
 # Matchmaking Service
 A conceptual model of an online service for matching players in competitive games.
-Built with the purpose of exploring an intersection of two passions: video games & backend systems. 
+Built with the purpose of exploring an intersection of two passions: video games & backend systems.
 
 Without overloading on complexity, I've decided to build this project with the following constraints:
 - Mocking of player / client requests using python scripts
 - API without AUTH
 - Simple in-memory models for tracking game state
 - Simulated matches
+
+For more reading check out:
+- [Project References](docs/references.md)
+- [Roadmap](docs/roadmap.md)
 
 <br>
 
@@ -39,8 +43,6 @@ For first time use, set up a python environment using:
 
 Afterwards, use the following to activate the environment when working on the project:
 `source .venv/bin/activate`
-
-<br>
 
 ### Building & running
 For building the project into a runnable program use:
