@@ -1,6 +1,7 @@
 from matchmaking_service.models import Player, Match, MatchRequest
 from typing import Optional
 
+
 class GameState:
     """
     In-memory store for players, match requests, and active matches.
@@ -18,7 +19,7 @@ class GameState:
     # Player operations
     # -----------------------
 
-    def add_player(self, player: Player):
+    def add_player(self, player: Optional[Player]):
         """Add a player to the state store."""
         if player is None:
             raise ValueError("Player cannot be None.")
@@ -37,7 +38,7 @@ class GameState:
     # Match request operations
     # -----------------------
 
-    def add_match_request(self, request: MatchRequest):
+    def add_match_request(self, request: Optional[MatchRequest]):
         """Add a match request to the queue."""
         if request is None:
             raise ValueError("Request cannot be None.")
@@ -56,7 +57,7 @@ class GameState:
     # Match operations
     # -----------------------
 
-    def add_match(self, match: Match):
+    def add_match(self, match: Optional[Match]):
         """Add an active match."""
         if match is None:
             raise ValueError("Match cannot be None.")

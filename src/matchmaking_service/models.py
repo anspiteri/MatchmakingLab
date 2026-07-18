@@ -4,10 +4,12 @@ class Player:
         self.username = username
         self.rating = rating
 
+
 class Match:
     def __init__(self, players: list[Player]):
         self.players = players
         self.winner = None
+
 
 class MatchRequest:
     def __init__(self, player: Player, time: int):

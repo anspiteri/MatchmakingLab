@@ -6,10 +6,12 @@ app = FastAPI()
 state = GameState()
 service = GameService(state)
 
-@app.get('/')
+
+@app.get("/")
 async def root():
     return {"message": "Backend service running."}
 
-@app.post('/tick')
+
+@app.post("/tick")
 async def tick():
     service.tick()
