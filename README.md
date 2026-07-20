@@ -1,6 +1,6 @@
 # Matchmaking Service
 A conceptual model of an online service for matching players in competitive games.
-Built with the purpose of exploring an intersection of two passions: video games & backend systems. The focus of this project is matchmaking algorithms, and modelling the general flow of a competitive match making system with an API, in-memory state, 
+Built with the purpose of exploring an intersection of two passions: video games & backend systems. The focus of this project is matchmaking algorithms, and modelling the general flow of a competitive match making system with an API, in-memory state, and basic business logic.
 
 For simplicity I've decided to use the following constraints:
 - Mocking of player / client requests using python scripts
