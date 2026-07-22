@@ -1,7 +1,7 @@
 [project]
-name = "matchmaking_service"
+name = "matchmaking_benchmarker"
 version = "0.1.0"
-description = "Matchmaking service for competitive online multiplayer games."
+description = "A framework for comparing competitive matchmaking algorithms."
 authors = [{ name = "An Spiteri" }]
 readme = "README.md"
 requires-python = ">=3.10"
