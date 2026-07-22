@@ -4,7 +4,7 @@ Built with the purpose of exploring an intersection of two passions: video games
 
 For simplicity I've decided to use the following constraints:
 - Mocking of player / client requests using python scripts
-- No auth or account management
+- No auth or account management (all api requests are treated as valid)
 - Simulated / random match results instead of real matches
 
 For more reading check out:
