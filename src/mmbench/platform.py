@@ -1,10 +1,13 @@
-from matchmaking_benchmarker.algorithms.base_algorithm import MatchmakingAlgorithm
+from mmbench.algorithms.base_algorithm import MatchmakingAlgorithm
 
 
 class Platform:
     def __init__(self, algorithm: MatchmakingAlgorithm):
         self._id_count = 0
         self._algorithm = algorithm
+
+    def add_to_matchmaking_queue(self):
+        pass
 
     def tick(self):
         self.match_players(self._algorithm)

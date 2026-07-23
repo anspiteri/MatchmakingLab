@@ -1,5 +1,5 @@
 [project]
-name = "matchmaking_benchmarker"
+name = "matchmaking-benchmarker"
 version = "0.1.0"
 description = "A framework for comparing competitive matchmaking algorithms."
 authors = [{ name = "An Spiteri" }]
@@ -19,3 +19,7 @@ dev = [
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = ["mmbench"]

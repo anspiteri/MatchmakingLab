@@ -1,6 +1,6 @@
 # Roadmap
 ## Initial Vertical Slice
-- Tick endpoint -> Creates MatchRequest -> Adds to GameState queue -> Choose a default / basic matchmaking algorithm -> Simulate matches -> Store results & update display
+- match request endpoint -> Creates MatchRequest -> Adds to state queue -> Choose a default / basic matchmaking algorithm -> Simulate matches -> Store results & update display
 
 ## Ideas
 - Swappable matchmaking algorithms / approaches via Strategy design pattern
