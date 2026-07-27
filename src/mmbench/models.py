@@ -1,4 +1,5 @@
 from enum import StrEnum, unique
+from typing import Any
 
 
 @unique
@@ -12,30 +13,25 @@ class Region(StrEnum):
 
 
 class Player:
-    def __init__(
-        self, id: int, username: str, skill_rating: float, stats: dict[str, float]
-    ):
+    def __init__(self, id: int, username: str, player_features: dict[str, Any]):
         self.id = id
         self.username = username
-        self.skill_rating = skill_rating
-        self.stats = stats
+        self.player_features = player_features
 
 
 class MatchRequest:
-    def __init__(self, player: Player, time: int, latency: float, region: Region):
+    def __init__(self, player: Player, req_features: dict[str, Any]):
         self.player = player
-        self.time = time
-        self.latency = latency
-        self.region = region
+        self.req_features = req_features
 
 
-class NewMatch:
+class ActiveMatch:
     def __init__(self, team_A: list[Player], team_B: list[Player]):
         self.team_A = team_A
         self.team_B = team_B
 
 
-class MatchResults:
+class FinishedMatch:
     def __init__(self, winning_team: list[Player], losing_team: list[Player]):
         self.winning_team = winning_team
         self.losing_team = losing_team

@@ -1,5 +1,5 @@
 # References
-## To-read
+## Matchmaking Approaches
 [Globally Optimized Approach to Matchmaking](https://dl.acm.org/doi/10.1145/3447548.3467074)
 - Main paper to get an understanding of the current state of SBMM
 - Presents some of the other attempts for SBMM algorithms, and presents it's own machine-learning inspired approach
@@ -12,3 +12,5 @@
 ["What is Skill-Based Matchmaking?"](https://www.pubnub.com/blog/skill-based-matchmaking-explained/)
 - Great article on some of the production grade considerations for a SBMM service
 
+## Software Engineering
+https://stackoverflow.blog/2020/03/02/best-practices-for-rest-api-design/

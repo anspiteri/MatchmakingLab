@@ -1,11 +1,20 @@
 # Roadmap
 ## Initial Vertical Slice
-- match request endpoint -> Creates MatchRequest -> Adds to state queue -> Choose a default / basic matchmaking algorithm -> Simulate matches -> Store results & update display
+- client: match request endpoint -> server: creates MatchRequest -> server: adds to state queue
+- server: tick every second -> server: run default / basic matchmaking algorithm (runs matchmaking sequentially on one thread) -> server: simulate matches (on a separate thread) -> server: store results & update display
+
+1. What is the best way to coordinate player_features and request_features between client & server.
+	- An approach is to keep it general, a player_features dictionary, and a request_features dictionary-- allowing for each approach to work on whichever data it wants but introducing the problem of type errors with mismatched data and algorithm approaches. (can mitigate this with strict type-checking for each algorithm, and possibly graceful failure for non-critical features.)
+	- The next question is player state, the player state depends on the results from match simulation and the way that each matchmaking approach stores and interprets player performance... so are we going to start the simulations from a blank slate or try to model an existing system? A blank slate makes it easier to compare and experiment with.
+		- That means player features are not sent via the API but should be hosted on the server. New players start with blank features. Simulations update features. This will require a simulation engine. This means that username only is sent to the API.
+
+2. What is the best way to run the TICK loop in the server? How does FASTAPI and Python approach concurrency and parallelism?
+3. What will the default matchmaking approach be? Implement it.
+4. How will results be displayed on the client end? TUI.
 
 ## Ideas
 - Swappable matchmaking algorithms / approaches via Strategy design pattern
 - Logging for comparing the above approaches
-- Load balancing via multiple containers
 
 ## Demo
 - For the demo, it could be really interesting to have a live display of the script executing against the API.
@@ -18,9 +27,6 @@
 		- leader-board with player and player features
 	- Another static display with server performance statistics
 		- TBD
-
-## Persistence
-- For load-balancing and multiple containers, there needs to be persistence across containers, so a database solution like redis might be the right choice
 
 ## Datasets
 ### Types of Data
