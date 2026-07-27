@@ -1,7 +1,7 @@
-# Matchmaking Benchmarker
-A framework for comparing competitive matchmaking algorithms.
+# Matchmaking Lab
+A framework for prototyping competitive matchmaking algorithms.
 
-This project seeks to create a platform for bench-marking different approaches to matching queued players based on varying combinations of relevant features.
+This project seeks to create a platform for learning & implementing different approaches to matching queued players based on varying combinations of relevant features.
 
 ## Background
 Match-making services are a core component of match-based competitive video games (League of Legends, Call of Duty, Fortnite, to name a few). At a basic level, these services seek to match queuing players based on features such as skill level, geographical region, latency / ping to servers, and queue time with the goal of optimising engagement and match satisfaction. There has been rich history of approaches and developments to this kind of optimisation problem. To access some of the research that went into this project, see [Project References](docs/references.md).
@@ -25,7 +25,7 @@ Furthermore, the best feedback you can obtain for algorithms affecting real worl
 
 ## Project Structure
 ```
-MatchmakingBenchmarker/
+MatchmakingLab/
 ├── docs/
 |   ├── referneces.md
 |   └── roadmap.md
@@ -33,14 +33,15 @@ MatchmakingBenchmarker/
 |   ├── demo.py
 |   └── run.py
 ├── src/
-|   └── matchmaking_benchmarker/
+|   └── matchmakinglab/
 |       ├── algorithms/
 |			├── __init__.py
 |			└── base_algorithm.py
 |       ├── __init__.py
 |       ├── api.py
 |       ├── models.py
-|       └── platform.py
+|       ├── platform.py
+|       └── state.py
 ├── tests/
 ├── .gitignore
 ├── LICENSE

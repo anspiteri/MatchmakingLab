@@ -1,7 +1,10 @@
 from typing import Any, Optional
-from mmbench.algorithms.base_algorithm import DefaultApproach, MatchmakingAlgorithm
-from mmbench.state import PlatformState
-from mmbench.models import MatchRequest, Player
+from matchmakinglab.algorithms.base_algorithm import (
+    DefaultApproach,
+    MatchmakingAlgorithm,
+)
+from matchmakinglab.state import PlatformState
+from matchmakinglab.models import MatchRequest, Player
 
 
 class Platform:

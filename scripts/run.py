@@ -3,7 +3,7 @@ import uvicorn
 
 def main():
     uvicorn.run(
-        "mmbench.api:app",
+        "matchmakinglab.api:app",
         host="0.0.0.0",
         port=8000,
         reload=True,

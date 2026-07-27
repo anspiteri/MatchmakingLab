@@ -3,8 +3,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from starlette.status import HTTP_202_ACCEPTED
 
-from mmbench.platform import Platform
-from mmbench.state import PlatformState
+from matchmakinglab.platform import Platform
+from matchmakinglab.state import PlatformState
 
 
 class MatchReqDetails(BaseModel):

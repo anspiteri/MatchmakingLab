@@ -1,7 +1,7 @@
 [project]
-name = "matchmaking-benchmarker"
+name = "matchmakinglab"
 version = "0.1.0"
-description = "A framework for comparing competitive matchmaking algorithms."
+description = "A framework for prototyping competitive matchmaking algorithms."
 authors = [{ name = "An Spiteri" }]
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,4 +22,4 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
-packages = ["mmbench"]
+packages = ["matchmakinglab"]
