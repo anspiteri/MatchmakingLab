@@ -1,7 +1,7 @@
 # Roadmap
 
 ## Project Goal
-I've shifted this project to be a prototyping platform instead of a comparator / benchmarking platform because the gold standard for comparison would be live testing with real players. Instead, this project is better suited for learning how to turn ideas into code.
+I've shifted this project to be a prototyping platform instead of a comparator / benchmarking platform because the gold standard for comparison would be live testing with real players. Instead, this project is better suited for analysing conceptual approaches to the matchmaking problem within a real world-like simulator.
 
 ## Initial Vertical Slice
 - client: match request endpoint -> server: creates MatchRequest -> server: adds to state queue

@@ -11,6 +11,3 @@
 
 ["What is Skill-Based Matchmaking?"](https://www.pubnub.com/blog/skill-based-matchmaking-explained/)
 - Great article on some of the production grade considerations for a SBMM service
-
-## Software Engineering
-https://stackoverflow.blog/2020/03/02/best-practices-for-rest-api-design/
