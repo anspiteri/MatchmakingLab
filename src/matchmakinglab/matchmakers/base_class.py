@@ -1,0 +1,18 @@
+from abc import ABC, abstractmethod
+from typing import Any
+
+from matchmakinglab.models import FinishedMatch, MatchRequest
+
+
+class MatchmakingStrategy(ABC):
+    @abstractmethod
+    def run_algorithm(self, queue: list[MatchRequest]):
+        pass
+
+    @abstractmethod
+    def setup_player_features(self) -> dict[str, Any]:
+        pass
+
+    @abstractmethod
+    def update_player_features(self, finished_match: FinishedMatch):
+        pass
