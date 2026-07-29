@@ -23,8 +23,14 @@ class PlatformState:
     def enqueue_match_req(self, req: MatchRequest):
         self._matchmaking_queue.append(req)
 
+    def get_matchmaking_queue(self):
+        return self._matchmaking_queue
+
     def add_active_match(self, active_match: ActiveMatch):
         self._active_matches.append(active_match)
 
     def enqueue_finished_match(self, finished_match: FinishedMatch):
         self._finished_matches.append(finished_match)
+
+    def get_finished_matches(self):
+        return self._finished_matches
