@@ -13,16 +13,20 @@ I've shifted this project to be a prototyping platform instead of a comparator /
 		- That means player features are not sent via the API but should be hosted on the server. New players start with blank features. Simulations update features. This will require a simulation engine. This means that username only is sent to the API.
 
 2. What is the best way to run the TICK loop in the server? How does FASTAPI and Python approach concurrency and parallelism?
+
+3. How will data be generated? Data generation is dependent on the matchmaking strategy, as it configures both request features and player features.
+	- Request features are validated in an EAFP (easier to ask for forgiveness than permission) approach.
+	- Data generator then is coupled with each matchmaking strategy. The next step will be to think about how the app is going to run as a whole.
+		- If data is coupled with approaches, meaning that the same dataset cannot be used to compare approaches, then this will affect what metrics I measure and display.
+		- How will I compose the generators then? Alongside the matchmakers?
+
 3. What will the default matchmaking approach be? Implement it.
 4. How will results be displayed on the client end? TUI.
 
-## Ideas
-- Swappable matchmaking algorithms / approaches via Strategy design pattern
-- Logging for comparing the above approaches
-
 ## Demo
 - For the demo, it could be really interesting to have a live display of the script executing against the API.
-- This would especially be cool if I could source or generate a large dataset.
+- I'm going to try generating fresh data for each run as different approaches operate on their own set of features.
+	- It would be good to generate a log then to compare results from different approaches, as well as as a seed for recreating scenarios.
 - Useful metrics could be:
 	- A rolling display of the server log with API requests
 	- A static display of the following stats:

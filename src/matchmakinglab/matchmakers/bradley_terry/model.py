@@ -1,5 +1,5 @@
 from typing import Any
-from matchmakinglab.matchmakers.base_class import MatchmakingStrategy
+from matchmakinglab.matchmakers import MatchmakingStrategy
 from matchmakinglab.models import FinishedMatch, MatchRequest
 
 BASE_SKILL_RATING = 1500
