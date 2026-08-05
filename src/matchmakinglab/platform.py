@@ -1,7 +1,7 @@
 from typing import Any, Optional
 from matchmakinglab.matchmakers import MatchmakingStrategy, BradleyTerry
 from matchmakinglab.state import PlatformState
-from matchmakinglab.models import FinishedMatch, MatchRequest, Player
+from matchmakinglab.models import ActiveMatch, FinishedMatch, MatchRequest, Player
 
 
 class Platform:
@@ -23,13 +23,23 @@ class Platform:
         state.enqueue_match_req(MatchRequest(player, req_features))
 
     def tick(self, state: PlatformState):
-        self._match_players(state.get_matchmaking_queue(), self._strategy)
+        """
+        During tick(), Platform briefly shares matchmaking queue, active games, and finished matches with PlatformState
+        """
+        self._match_players(
+            state.get_matchmaking_queue(), state.get_active_games(), self._strategy
+        )
         self._simulate_matches()
         self._update_player_features(state.get_finished_matches(), self._strategy)
         self._update_display()
 
-    def _match_players(self, queue: list[MatchRequest], strategy: MatchmakingStrategy):
-        strategy.run_algorithm(queue)
+    def _match_players(
+        self,
+        queue: list[MatchRequest],
+        active_games: list[ActiveMatch],
+        strategy: MatchmakingStrategy,
+    ):
+        strategy.run_algorithm(queue, active_games)
 
     def _simulate_matches(self):
         return None

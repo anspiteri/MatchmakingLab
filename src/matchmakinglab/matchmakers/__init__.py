@@ -1,6 +1,6 @@
-from .base_model import MatchmakingStrategy
+from .base_strategy import MatchmakingStrategy
 from .base_generator import FeatureGenerator
-from .bradley_terry.model import BradleyTerry
+from .bradley_terry.strategy import BradleyTerry
 from .bradley_terry.generator import BradleyTerryGenerator
 
 __all__ = [
