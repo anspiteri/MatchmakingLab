@@ -29,6 +29,7 @@ class ActiveMatch:
     def __init__(self, team_A: list[Player], team_B: list[Player]):
         self.team_A = team_A
         self.team_B = team_B
+        self.tick_count = 0
 
 
 class FinishedMatch:

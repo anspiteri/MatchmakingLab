@@ -1,12 +1,14 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from matchmakinglab.models import FinishedMatch, MatchRequest
+from matchmakinglab.models import ActiveMatch, FinishedMatch, MatchRequest
 
 
 class MatchmakingStrategy(ABC):
     @abstractmethod
-    def run_algorithm(self, queue: list[MatchRequest]):
+    def run_algorithm(
+        self, matchmaking_queue: list[MatchRequest], active_games: list[ActiveMatch]
+    ):
         pass
 
     @abstractmethod

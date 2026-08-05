@@ -3,6 +3,11 @@
 ## Project Goal
 I've shifted this project to be a prototyping platform instead of a comparator / benchmarking platform because the gold standard for comparison would be live testing with real players. Instead, this project is better suited for analysing conceptual approaches to the matchmaking problem within a real world-like simulator.
 
+## Deployment
+For deployment I think I will have a CLI wrapper over the ASGI server instance. The whole application will be released on the gitub release.
+
+The CLI will allow you to run the simulation with specifiers for matchmaking strategy, simulation size, and log output.
+
 ## Initial Vertical Slice
 - client: match request endpoint -> server: creates MatchRequest -> server: adds to state queue
 - server: tick every second -> server: run default / basic matchmaking algorithm (runs matchmaking sequentially on one thread) -> server: simulate matches (on a separate thread) -> server: store results & update display
@@ -13,6 +18,9 @@ I've shifted this project to be a prototyping platform instead of a comparator /
 		- That means player features are not sent via the API but should be hosted on the server. New players start with blank features. Simulations update features. This will require a simulation engine. This means that username only is sent to the API.
 
 2. What is the best way to run the TICK loop in the server? How does FASTAPI and Python approach concurrency and parallelism?
+	- Experiment with tick timing within uvicorn's event loop. I'll aim for a mostly single threaded execution model:
+		- Open HTTP requests for some ms -> run tick() -> open HTTP requests -> run tick()
+		- Can experiment with multi-threaded optimisation for tasks within the tick() method depending on runtime.
 
 3. How will data be generated? Data generation is dependent on the matchmaking strategy, as it configures both request features and player features.
 	- Request features are validated in an EAFP (easier to ask for forgiveness than permission) approach.
@@ -20,11 +28,10 @@ I've shifted this project to be a prototyping platform instead of a comparator /
 		- If data is coupled with approaches, meaning that the same dataset cannot be used to compare approaches, then this will affect what metrics I measure and display.
 		- How will I compose the generators then? Alongside the matchmakers?
 
-3. What will the default matchmaking approach be? Implement it.
-4. How will results be displayed on the client end? TUI.
+3. How will results be displayed on the client end? TUI.
 
-## Demo
-- For the demo, it could be really interesting to have a live display of the script executing against the API.
+## TUI
+- For the TUI display, it could be really interesting to have a live window of the script executing against the API.
 - I'm going to try generating fresh data for each run as different approaches operate on their own set of features.
 	- It would be good to generate a log then to compare results from different approaches, as well as as a seed for recreating scenarios.
 - Useful metrics could be:
