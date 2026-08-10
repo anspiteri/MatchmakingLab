@@ -31,7 +31,7 @@ class Platform:
         )
         self._simulate_matches()
         self._update_player_features(state.get_finished_matches(), self._strategy)
-        self._update_display()
+        self._increment_wait_time(state.get_matchmaking_queue())
 
     def _match_players(
         self,
@@ -50,5 +50,6 @@ class Platform:
         for match in finished_matches:
             strategy.update_player_features(match)
 
-    def _update_display(self):
-        return None
+    def _increment_wait_time(self, matchmaking_queue: list[MatchRequest]):
+        for req in matchmaking_queue:
+            req.tick_wait_time += 1

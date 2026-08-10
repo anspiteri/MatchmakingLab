@@ -23,13 +23,14 @@ class MatchRequest:
     def __init__(self, player: Player, req_features: dict[str, Any]):
         self.player = player
         self.req_features = req_features
+        self.tick_wait_time = 0
 
 
 class ActiveMatch:
     def __init__(self, team_A: list[Player], team_B: list[Player]):
         self.team_A = team_A
         self.team_B = team_B
-        self.tick_count = 0
+        self.tick_match_length = 0
 
 
 class FinishedMatch:
