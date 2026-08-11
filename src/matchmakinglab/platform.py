@@ -36,10 +36,14 @@ class Platform:
     def _match_players(
         self,
         queue: list[MatchRequest],
-        active_games: list[ActiveMatch],
+        active_matches: list[ActiveMatch],
         strategy: MatchmakingStrategy,
     ):
-        strategy.run_algorithm(queue, active_games)
+
+        matches, remaining = strategy.run_algorithm(queue)
+
+        active_matches.extend(matches)
+        queue = remaining
 
     def _simulate_matches(self):
         return None
