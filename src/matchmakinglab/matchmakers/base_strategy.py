@@ -7,8 +7,8 @@ from matchmakinglab.models import ActiveMatch, FinishedMatch, MatchRequest
 class MatchmakingStrategy(ABC):
     @abstractmethod
     def run_algorithm(
-        self, matchmaking_queue: list[MatchRequest], active_games: list[ActiveMatch]
-    ):
+        self, queue_snapshot: list[MatchRequest]
+    ) -> tuple[list[ActiveMatch], list[MatchRequest]]:
         pass
 
     @abstractmethod
