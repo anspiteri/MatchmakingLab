@@ -6,12 +6,9 @@ Match-making services are a core component of match-based competitive video game
 
 I decided to build this project to grow my applied algorithmic skills in the context of backend web systems; this domain requires both in-depth algorithmic thinking, and  production-minded software engineering. Having a background and a lot of time in games like Fortnite and many first-person shooters, this is also a really interesting and fun project area for me.
 
-For more reading check out:
-- [Roadmap](docs/roadmap.md)
-
 <br>
 
-## Project Constraints
+## Project Constraints (requires-update)
 To focus my time on my desired growth areas I've decided to use the following constraints:
 - Mocking of player / client requests using python scripts
 - No auth or account management (all api requests are treated as valid)
@@ -25,16 +22,26 @@ Furthermore, the best feedback you can obtain for algorithms affecting real worl
 ```
 MatchmakingLab/
 ├── docs/
-|   ├── referneces.md
-|   └── roadmap.md
+|   ├── architecture.md
+|   ├── matchmaking-implementations.md
+|   └── project-diary.md
+├── references/
+|   ├── papers/
+|   └── bibliography.md
 ├── scripts/
-|   ├── demo.py
 |   └── run.py
 ├── src/
 |   └── matchmakinglab/
-|       ├── algorithms/
-|			├── __init__.py
-|			└── base_algorithm.py
+|       ├── matchmakers/
+|       |   ├── bradley_terry/
+|       |   |   ├── __init__.py
+|       |   |   ├── generator.py
+|       |   |   └── strategy.py
+|       |   ├── __init__.py
+|       |   ├── base_generator.py
+|       |   └── base_strategy.py
+|       ├── simulator/
+|       |   └── __init__.py
 |       ├── __init__.py
 |       ├── api.py
 |       ├── models.py
@@ -49,12 +56,14 @@ MatchmakingLab/
 
 <br>
 
-## Architecture
-TODO
+## Architecture (requires-update)
+Once architecture is completed, provide a summary of the high-level architecture of the project.
+
+For more details on each module, see [architecture](./docs/architecture.md).
 
 <br>
 
-## Development
+## Development (requires-update)
 ### Setting up & using a python environment
 For first time use, set up a python environment using:
 `python3 -m venv .venv`
@@ -68,11 +77,3 @@ For building the project into a runnable program use:
 
 To spin up the server, use run.py in `scripts/`:
 `python scripts/run.py`
-
-<br>
-
-## Core Dependencies
-This project utilises the following dependencies:
-- fastapi for the web backend framework
-- uvicorn for running the application server
-- setuptools as the backend build system
