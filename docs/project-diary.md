@@ -1,12 +1,33 @@
-# Roadmap
+# Project Diary
 
 ## Project Goal
 I've shifted this project to be a prototyping platform instead of a comparator / benchmarking platform because the gold standard for comparison would be live testing with real players. Instead, this project is better suited for analysing conceptual approaches to the matchmaking problem within a real world-like simulator.
 
+[11/08/2026]
+However, after beginning the Bradley Terry approach, there may still be room for benchmarking, as there are a number of different ways to optimise within each approach. To be able to see the tangible differences optimisations would make would be worthwhile.
+
 ## Deployment
 For deployment I think I will have a CLI wrapper over the ASGI server instance. The whole application will be released on the gitub release.
-
 The CLI will allow you to run the simulation with specifiers for matchmaking strategy, simulation size, and log output.
+
+[11/08/2026]
+Over the last week or so I've been piecing together the different components of the application.
+
+The overall application will can be a Click CLI application
+- Click coordinates the start-up of the ASGI server via uvicorn. Uvicorn coordinates the API via FASTAPI
+- Click also coordinates the live display of the server, I've read about 'Rich' being a good option for this.
+
+The build backend will most likely change from setup tools because I'm no longer adding C modules. Uv seems to be the standard.
+
+For deployment, I'm considering hosting an instance of it online, to make toying with it very easy. A complete appimage also makes sense.
+
+The README be both a good overview of the whole project, while also providing a launching point for exploring it
+- Each section should have links to deeper diving related content
+- Introduce the project with some small background
+- It should have gifs of the running project to get a good idea of what the project looks like, and how it works without needing to run it.
+- Overview of architecture, and core dependencies.
+- Options for running the application
+- Options for jumping into the code / development
 
 ## Initial Vertical Slice
 - client: match request endpoint -> server: creates MatchRequest -> server: adds to state queue
