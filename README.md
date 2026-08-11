@@ -2,7 +2,7 @@
 This project seeks to create a platform for prototyping, analysing & learning different matchmaking approaches for competitive online games.
 
 ## Background
-Match-making services are a core component of match-based competitive video games (League of Legends, Call of Duty, Fortnite, to name a few). At a basic level, these services seek to match queuing players based on features such as skill level, geographical region, latency / ping to servers, and queue time with the goal of optimising engagement and match satisfaction. There has been rich history of approaches and developments to this kind of optimisation problem. To access some of the research that went into this project, see [Project References](docs/references.md).
+Match-making services are a core component of match-based competitive video games (League of Legends, Call of Duty, Fortnite, to name a few). At a basic level, these services seek to match queuing players based on features such as skill level, geographical region, latency / ping to servers, and queue time with the goal of optimising engagement and match satisfaction. There has been rich history of approaches and developments to this kind of optimisation problem. To access some of the research that went into this project, see [references](./references/bibliography.md).
 
 I decided to build this project to grow my applied algorithmic skills in the context of backend web systems; this domain requires both in-depth algorithmic thinking, and  production-minded software engineering. Having a background and a lot of time in games like Fortnite and many first-person shooters, this is also a really interesting and fun project area for me.
 
