@@ -28,34 +28,31 @@ DIFFERENT_REGION = 50
 QUEUE_BENEFIT_SCALAR = 1
 
 
-def _bt_probability(i: int, j: int) -> int:
-    result = i / (i + j)
-    return int(round(result * 100))
+class BradleyTerry(MatchmakingStrategy):
+    def __init__(self):
+        pass
 
+    def run_algorithm(
+        self, queue_snapshot: list[MatchRequest]
+    ) -> tuple[list[ActiveMatch], list[MatchRequest]]:
 
-def _competitiveness_score(bt_probability):
-    return abs(bt_probability - TARGET_PROBABILITY)
+        if len(queue_snapshot) == 0:
+            return ([], queue_snapshot)
 
+        possible_matches = [
+            _model_match(A, B) for A, B in combinations(queue_snapshot, 2)
+        ]
 
-def _latency_cost(i: Optional[int], j: Optional[int]):
-    if i is None or j is None:
-        return 0
+        if possible_matches is None:
+            raise TypeError("Creating match models failed: None")
 
-    return abs(i - j) * LATENCY_SCALAR
+        return ([], [])
 
+    def setup_player_features(self) -> dict[str, Any]:
+        return {SKILL_RATING_KEY: BASE_SKILL_RATING}
 
-def _region_difference(i: Region, j: Region):
-    return SAME_REGION if i == j else DIFFERENT_REGION
-
-
-def _queue_time_benefit(queue_time_A: int, queue_time_B: int):
-    return (queue_time_A + queue_time_B) * QUEUE_BENEFIT_SCALAR
-
-
-def _match_cost_function(
-    competitiveness, latency_cost, region_difference, queue_time_benefit
-) -> int:
-    return competitiveness + latency_cost + region_difference - queue_time_benefit
+    def update_player_features(self, finished_match: FinishedMatch):
+        pass
 
 
 def _model_match(player_A: MatchRequest, player_B: MatchRequest):
@@ -104,28 +101,31 @@ def _model_match(player_A: MatchRequest, player_B: MatchRequest):
     )
 
 
-class BradleyTerry(MatchmakingStrategy):
-    def __init__(self):
-        pass
+def _match_cost_function(
+    competitiveness, latency_cost, region_difference, queue_time_benefit
+) -> int:
+    return competitiveness + latency_cost + region_difference - queue_time_benefit
 
-    def run_algorithm(
-        self, queue_snapshot: list[MatchRequest]
-    ) -> tuple[list[ActiveMatch], list[MatchRequest]]:
 
-        if len(queue_snapshot) == 0:
-            return ([], queue_snapshot)
+def _bt_probability(i: int, j: int) -> int:
+    result = i / (i + j)
+    return int(round(result * 100))
 
-        possible_matches = [
-            _model_match(A, B) for A, B in combinations(queue_snapshot, 2)
-        ]
 
-        if possible_matches is None:
-            raise TypeError("Creating match models failed: None")
+def _competitiveness_score(bt_probability):
+    return abs(bt_probability - TARGET_PROBABILITY)
 
-        return ([], [])
 
-    def setup_player_features(self) -> dict[str, Any]:
-        return {SKILL_RATING_KEY: BASE_SKILL_RATING}
+def _latency_cost(i: Optional[int], j: Optional[int]):
+    if i is None or j is None:
+        return 0
 
-    def update_player_features(self, finished_match: FinishedMatch):
-        pass
+    return abs(i - j) * LATENCY_SCALAR
+
+
+def _region_difference(i: Region, j: Region):
+    return SAME_REGION if i == j else DIFFERENT_REGION
+
+
+def _queue_time_benefit(queue_time_A: int, queue_time_B: int):
+    return (queue_time_A + queue_time_B) * QUEUE_BENEFIT_SCALAR
