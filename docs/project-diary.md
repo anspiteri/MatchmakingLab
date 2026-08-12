@@ -1,12 +1,20 @@
 # Project Diary
 
-## Project Goal
+## Log
+12/08/2026
+For the problem of generator and strategy coupling, could use a factory method to configure both components together, and ensure that they never are configured independently. May add some complexity, will have to see how much it actually is.
+- Instead of the strategy being a direct parameter to the platform initialiser, create enumerators for different approaches.
+
+For the problem of generalising the platform for different approaches, I've gone with the approach of dictionaries containing approach-specific data as function parameters. This allows for approaches to define their own data in dictionaries, and then perform both key setup during initialisation, and then validation during runtime.
+
+## Ideas
+### Project Goal
 I've shifted this project to be a prototyping platform instead of a comparator / benchmarking platform because the gold standard for comparison would be live testing with real players. Instead, this project is better suited for analysing conceptual approaches to the matchmaking problem within a real world-like simulator.
 
 [11/08/2026]
 However, after beginning the Bradley Terry approach, there may still be room for benchmarking, as there are a number of different ways to optimise within each approach. To be able to see the tangible differences optimisations would make would be worthwhile.
 
-## Deployment
+### Deployment
 For deployment I think I will have a CLI wrapper over the ASGI server instance. The whole application will be released on the gitub release.
 The CLI will allow you to run the simulation with specifiers for matchmaking strategy, simulation size, and log output.
 
@@ -29,7 +37,7 @@ The README be both a good overview of the whole project, while also providing a 
 - Options for running the application
 - Options for jumping into the code / development
 
-## Initial Vertical Slice
+### Initial Vertical Slice
 - client: match request endpoint -> server: creates MatchRequest -> server: adds to state queue
 - server: tick every second -> server: run default / basic matchmaking algorithm (runs matchmaking sequentially on one thread) -> server: simulate matches (on a separate thread) -> server: store results & update display
 
@@ -51,7 +59,7 @@ The README be both a good overview of the whole project, while also providing a 
 
 3. How will results be displayed on the client end? TUI.
 
-## TUI
+### TUI
 - For the TUI display, it could be really interesting to have a live window of the script executing against the API.
 - I'm going to try generating fresh data for each run as different approaches operate on their own set of features.
 	- It would be good to generate a log then to compare results from different approaches, as well as as a seed for recreating scenarios.
@@ -64,14 +72,14 @@ The README be both a good overview of the whole project, while also providing a 
 	- Another static display with server performance statistics
 		- TBD
 
-## Datasets
-### Types of Data
+### Datasets
+#### Types of Data
 - API requests for the demo -> {player_identifier, skill_rating, player_features{x_i | i in X_player_features}, request_features{y_i | i in Y_request_features}}
 	- player features would include more detailed statistics on individual player skills & performance
 	- request features would include details such as geographical region, latency, time of request, length of current play session
 	- It would be a good idea to model based off an existing standard dataset so I can use existing data for training alongside my generated dataset
 - For training models -> {}, this would require match statistics, so finding a standard synthetic dataset maybe the best approach.
 
-### Generating Data
+#### Generating Data
 - To generate data for the demo, can look into randomising based on enumerators for discrete fields, and probability based methods for related fields (skill_rating, player features) and fuzzing maybe for player_identifier or just incremental ids.
 - I wonder if I could create a algorithm that generates players and server activity at run time?
