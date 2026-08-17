@@ -10,6 +10,7 @@ class Region(StrEnum):
     ASIA = "asia"  # Asia
     OCEANIA = "oceania"  # Oceania (Australia/NZ)
     AFRICA = "africa"  # Africa (South Africa)
+    UNDEFINED = "undefined"
 
 
 class Player:
