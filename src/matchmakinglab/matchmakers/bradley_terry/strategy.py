@@ -16,6 +16,7 @@ LATENCY_KEY = "latency"
 REGION_KEY = "region"
 
 # --- WEIGHTS ---
+# Assumed to be positive scalars
 BASE_SKILL_RATING = 100
 
 TARGET_PROBABILITY = 50  # optimises for competitiveness i.e. 50/50 skill
@@ -42,11 +43,6 @@ class BTOptimisationMethod(Enum):
     UNDEFINED = auto()
 
 
-class BTQueuePolicy(Enum):
-    DEFAULT = auto()
-    UNDEFINED = auto()
-
-
 # --- HELPER CLASSES ---
 class MatchModel:
     def __init__(self, A: MatchRequest, B: MatchRequest, match_cost: int):
@@ -61,11 +57,9 @@ class BradleyTerry(MatchmakingStrategy):
         self,
         candidate_generation_method=BTCandidateGenerationMethod.NAIVE,
         optimisation_method=BTOptimisationMethod.GREEDY,
-        queue_policy=BTQueuePolicy.DEFAULT,
     ):
         self._candidate_generation_method = candidate_generation_method
         self._optimisation_method = optimisation_method
-        self._queue_policy = queue_policy
 
     def setup_player_features(self) -> dict[str, Any]:
         return {SKILL_RATING_KEY: BASE_SKILL_RATING}
@@ -91,7 +85,7 @@ class BradleyTerry(MatchmakingStrategy):
                 pass
 
         matches, players_matched = _queue_matching_function(
-            match_models, self._optimisation_method, self._queue_policy
+            match_models, self._optimisation_method
         )
 
         remaining = list(set(queue_snapshot).difference(players_matched))
@@ -103,7 +97,6 @@ class BradleyTerry(MatchmakingStrategy):
 def _queue_matching_function(
     match_models: list[MatchModel],
     optimisation_method: BTOptimisationMethod,
-    queue_policy: BTQueuePolicy,
 ) -> tuple[list[ActiveMatch], list[Player]]:
     """
     This can be viewed as the global objective function that:
@@ -114,7 +107,7 @@ def _queue_matching_function(
 
     match optimisation_method:
         case BTOptimisationMethod.GREEDY:
-            result = _greedy_optimisation(match_models, queue_policy)
+            result = _greedy_optimisation(match_models)
         case _:
             pass
 
@@ -122,7 +115,7 @@ def _queue_matching_function(
 
 
 def _greedy_optimisation(
-    match_models: list[MatchModel], queue_policy: BTQueuePolicy
+    match_models: list[MatchModel],
 ) -> tuple[list[ActiveMatch], list[Player]]:
 
     match_models.sort(key=lambda x: x.match_cost)
@@ -155,6 +148,9 @@ def _model_match(player_A: MatchRequest, player_B: MatchRequest):
     if skill_rating_A is None or skill_rating_B is None:
         raise ValueError("A player skill is None")
 
+    if skill_rating_A < 0 or skill_rating_B < 0:
+        raise ValueError("Skill ratings must be non-negative")
+
     latency_A: Optional[int]
     latency_B: Optional[int]
 
@@ -162,6 +158,15 @@ def _model_match(player_A: MatchRequest, player_B: MatchRequest):
         player_A.req_features.get(LATENCY_KEY),
         player_A.req_features.get(LATENCY_KEY),
     )
+
+    if latency_A is None:
+        latency_A = 0
+
+    if latency_B is None:
+        latency_B = 0
+
+    if latency_A < 0 or latency_B < 0:
+        raise ValueError("Latency must be non-negative")
 
     region_A: Optional[Region]
     region_B: Optional[Region]
@@ -192,28 +197,36 @@ def _model_match(player_A: MatchRequest, player_B: MatchRequest):
 def _match_cost_function(
     competitiveness, latency_cost, region_difference, queue_time_benefit
 ) -> int:
+    """
+    Match Cost Function - how much it costs to match two players, lower is better
+
+    @param competitiveness: how close to 50/50 competitiion (lower is better)
+    @param latency_cost: the difference in latency between the two players (lower is better)
+    @param region_difference: whether players share region (lower is better)
+    @param queue_time_benefit: combined queue time of players (higher is better)
+    """
     return competitiveness + latency_cost + region_difference - queue_time_benefit
 
 
 def _bt_probability(i: int, j: int) -> int:
+    if i + j == 0:  # divide by 0 case
+        return 50
+
     result = i / (i + j)
     return int(round(result * 100))
 
 
-def _competitiveness_score(bt_probability: int):
+def _competitiveness_score(bt_probability: int) -> int:
     return abs(bt_probability - TARGET_PROBABILITY)
 
 
-def _latency_cost(i: Optional[int], j: Optional[int]):
-    if i is None or j is None:
-        return 0
-
-    return abs(i - j) * LATENCY_SCALAR
+def _latency_cost(i: int, j: int) -> int:
+    return abs((i - j) * LATENCY_SCALAR)
 
 
-def _region_difference(i: Region, j: Region):
+def _region_difference(i: Region, j: Region) -> int:
     return SAME_REGION if i == j else DIFFERENT_REGION
 
 
-def _queue_time_benefit(queue_time_A: int, queue_time_B: int):
-    return (queue_time_A + queue_time_B) * QUEUE_BENEFIT_SCALAR
+def _queue_time_benefit(queue_time_A: int, queue_time_B: int) -> int:
+    return abs((queue_time_A + queue_time_B) * QUEUE_BENEFIT_SCALAR)
