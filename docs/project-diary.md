@@ -1,6 +1,16 @@
 # Project Diary
 
 ## Log
+21/08/2026
+Spent some time researching and thinking about test approaches. I think for the initial bradley-terry matchmaking tests, I'll split testing into three layers:
+1. Unit-testing the correctness of my maths components (bt_probability, latency_cost, etc...)
+2. Unit-testing the correctness of my compositional functions (model_match -> which combines math components together)
+3. Unit-testing the correctness of my matchmaking assumption (do queue players actually match in the way I expect, or should expect?)
+
+TODO:
+* double-check completeness of math component test suite
+* double-check and possibly document the model match test, and ensure that it remains flexible to changing weights
+
 12/08/2026
 For the problem of generator and strategy coupling, could use a factory method to configure both components together, and ensure that they never are configured independently. May add some complexity, will have to see how much it actually is.
 - Instead of the strategy being a direct parameter to the platform initialiser, create enumerators for different approaches.
