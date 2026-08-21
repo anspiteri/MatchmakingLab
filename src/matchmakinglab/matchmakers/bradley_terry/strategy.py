@@ -1,6 +1,7 @@
+from dataclasses import dataclass
 from enum import Enum, auto
 from itertools import combinations
-from typing import Any, Optional
+from typing import Any
 from matchmakinglab.matchmakers import MatchmakingStrategy
 from matchmakinglab.models import (
     ActiveMatch,
@@ -44,11 +45,19 @@ class BTOptimisationMethod(Enum):
 
 
 # --- HELPER CLASSES ---
+@dataclass
 class MatchModel:
-    def __init__(self, A: MatchRequest, B: MatchRequest, match_cost: int):
-        self.A = A
-        self.B = B
-        self.match_cost = match_cost
+    request_A: MatchRequest
+    request_B: MatchRequest
+    match_cost: int
+
+
+@dataclass
+class MatchFeatures:
+    skill_rating: int
+    latency: int
+    region: Region
+    queue_time: int
 
 
 # --- MAIN CLASS IMPLEMENTATION ---
@@ -124,74 +133,77 @@ def _greedy_optimisation(
     chosen_matches: list[ActiveMatch] = []
 
     for match in match_models:
-        if match.A.player in matched_players or match.B.player in matched_players:
+        if (
+            match.request_A.player in matched_players
+            or match.request_B.player in matched_players
+        ):
             pass
 
-        chosen_matches.append(ActiveMatch([match.A.player], [match.B.player]))
-        matched_players.append(match.A.player)
-        matched_players.append(match.B.player)
+        chosen_matches.append(
+            ActiveMatch([match.request_A.player], [match.request_B.player])
+        )
+        matched_players.append(match.request_A.player)
+        matched_players.append(match.request_B.player)
 
     return chosen_matches, matched_players
 
 
-def _model_match(player_A: MatchRequest, player_B: MatchRequest):
-
-    skill_rating_A: Optional[int]
-    skill_rating_B: Optional[int]
-
-    skill_rating_A, skill_rating_B = (
-        player_A.player.player_features.get(SKILL_RATING_KEY),
-        player_B.player.player_features.get(SKILL_RATING_KEY),
-    )
-
-    # skill rating a is required feature
-    if skill_rating_A is None or skill_rating_B is None:
-        raise ValueError("A player skill is None")
-
-    if skill_rating_A < 0 or skill_rating_B < 0:
-        raise ValueError("Skill ratings must be non-negative")
-
-    latency_A: Optional[int]
-    latency_B: Optional[int]
-
-    latency_A, latency_B = (
-        player_A.req_features.get(LATENCY_KEY),
-        player_A.req_features.get(LATENCY_KEY),
-    )
-
-    if latency_A is None:
-        latency_A = 0
-
-    if latency_B is None:
-        latency_B = 0
-
-    if latency_A < 0 or latency_B < 0:
-        raise ValueError("Latency must be non-negative")
-
-    region_A: Optional[Region]
-    region_B: Optional[Region]
-
-    region_A, region_B = (
-        player_A.req_features.get(REGION_KEY),
-        player_B.req_features.get(REGION_KEY),
-    )
-
-    if region_A is None or region_B is None:
-        raise ValueError("Region is missing")
-
-    queue_time_A: Optional[int]
-    queue_time_B: Optional[int]
-
-    queue_time_A, queue_time_B = (player_A.tick_wait_time, player_B.tick_wait_time)
+def _model_match(request_A: MatchRequest, request_B: MatchRequest) -> MatchModel:
+    features_A = _extract_match_features(request_A)
+    features_B = _extract_match_features(request_B)
 
     match_cost = _match_cost_function(
-        _competitiveness_score(_bt_probability(skill_rating_A, skill_rating_B)),
-        _latency_cost(latency_A, latency_B),
-        _region_difference(region_A, region_B),
-        _queue_time_benefit(queue_time_A, queue_time_B),
+        _competitiveness_score(
+            _bt_probability(
+                features_A.skill_rating,
+                features_B.skill_rating,
+            )
+        ),
+        _latency_cost(
+            features_A.latency,
+            features_B.latency,
+        ),
+        _region_difference(
+            features_A.region,
+            features_B.region,
+        ),
+        _queue_time_benefit(
+            features_A.queue_time,
+            features_B.queue_time,
+        ),
     )
 
-    return MatchModel(player_A, player_B, match_cost)
+    return MatchModel(request_A, request_B, match_cost)
+
+
+def _extract_match_features(request: MatchRequest) -> MatchFeatures:
+    skill_rating = request.player.player_features.get(SKILL_RATING_KEY)
+
+    if skill_rating is None:
+        raise ValueError("A player skill is None")
+
+    if skill_rating < 0:
+        raise ValueError("Skill ratings must be non-negative")
+
+    latency = request.req_features.get(LATENCY_KEY)
+
+    if latency is None:
+        latency = 0
+
+    if latency < 0:
+        raise ValueError("Latency must be non-negative")
+
+    region = request.req_features.get(REGION_KEY)
+
+    if region is None:
+        raise ValueError("Region is missing")
+
+    return MatchFeatures(
+        skill_rating=skill_rating,
+        latency=latency,
+        region=region,
+        queue_time=request.tick_wait_time,
+    )
 
 
 def _match_cost_function(
