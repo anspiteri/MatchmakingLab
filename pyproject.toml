@@ -12,7 +12,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest"
+    "pytest",
+	"pytest-mock"
 ]
 
 [build-system]
