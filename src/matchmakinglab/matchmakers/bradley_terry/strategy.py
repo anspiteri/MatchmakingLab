@@ -4,6 +4,8 @@ from itertools import combinations
 from typing import Any
 from matchmakinglab.matchmakers import MatchmakingStrategy
 from matchmakinglab.models import (
+    LATENCY_KEY,
+    REGION_KEY,
     ActiveMatch,
     FinishedMatch,
     MatchRequest,
@@ -11,10 +13,8 @@ from matchmakinglab.models import (
     Region,
 )
 
-# --- KEYS --- (maybe split these up between general and bt specific)
+# --- KEYS ---
 SKILL_RATING_KEY = "skill_rating"
-LATENCY_KEY = "latency"
-REGION_KEY = "region"
 
 # --- WEIGHTS ---
 # Assumed to be positive scalars

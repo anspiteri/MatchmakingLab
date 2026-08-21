@@ -1,5 +1,9 @@
 from enum import StrEnum, unique
+from dataclasses import dataclass, field
 from typing import Any
+
+LATENCY_KEY = "latency"
+REGION_KEY = "region"
 
 
 @unique
@@ -13,28 +17,28 @@ class Region(StrEnum):
     UNDEFINED = "undefined"
 
 
+@dataclass
 class Player:
-    def __init__(self, id: int, username: str, player_features: dict[str, Any]):
-        self.id = id
-        self.username = username
-        self.player_features = player_features
+    id: int
+    username: str
+    player_features: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
 class MatchRequest:
-    def __init__(self, player: Player, req_features: dict[str, Any]):
-        self.player = player
-        self.req_features = req_features
-        self.tick_wait_time = 0
+    player: Player
+    req_features: dict[str, Any] = field(default_factory=dict)
+    tick_wait_time: int = 0
 
 
+@dataclass
 class ActiveMatch:
-    def __init__(self, team_A: list[Player], team_B: list[Player]):
-        self.team_A = team_A
-        self.team_B = team_B
-        self.tick_match_length = 0
+    team_A: list[Player] = field(default_factory=list)
+    team_B: list[Player] = field(default_factory=list)
+    tick_match_length: int = 0
 
 
+@dataclass
 class FinishedMatch:
-    def __init__(self, winning_team: list[Player], losing_team: list[Player]):
-        self.winning_team = winning_team
-        self.losing_team = losing_team
+    winning_team: list[Player] = field(default_factory=list)
+    losing_team: list[Player] = field(default_factory=list)
