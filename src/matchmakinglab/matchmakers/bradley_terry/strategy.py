@@ -182,6 +182,9 @@ def _extract_match_features(request: MatchRequest) -> MatchFeatures:
     if skill_rating is None:
         raise ValueError("A player skill is None")
 
+    if not isinstance(skill_rating, int):
+        raise ValueError("A player skill is not an int")
+
     if skill_rating < 0:
         raise ValueError("Skill ratings must be non-negative")
 
@@ -190,12 +193,15 @@ def _extract_match_features(request: MatchRequest) -> MatchFeatures:
     if latency is None:
         latency = 0
 
+    if not isinstance(latency, int):
+        raise ValueError("Latency must be an int")
+
     if latency < 0:
         raise ValueError("Latency must be non-negative")
 
     region = request.req_features.get(REGION_KEY)
 
-    if region is None:
+    if region is None or region is Region.UNDEFINED:
         raise ValueError("Region is missing")
 
     return MatchFeatures(
