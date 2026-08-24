@@ -33,6 +33,7 @@ class MatchRequest:
 
 @dataclass
 class ActiveMatch:
+    match_cost: int
     team_A: list[Player] = field(default_factory=list)
     team_B: list[Player] = field(default_factory=list)
     tick_match_length: int = 0
