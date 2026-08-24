@@ -1,4 +1,11 @@
 # Project Diary
+## Backlog
+### Urgent
+
+### Non-Urgent
+* double-check completeness of bt match model math component in test suite (21/08/2026)
+* double-check and possibly document the bt model match tests, ensuring the tests are flexible to changing weights (21/08/2026)
+* assess whether it's worth changing the bt greedy approach to employ a queue-policy that halts matching after a certain time  (24/08/2026)
 
 ## Log
 21/08/2026
@@ -6,10 +13,6 @@ Spent some time researching and thinking about test approaches. I think for the 
 1. Unit-testing the correctness of my maths components (bt_probability, latency_cost, etc...)
 2. Unit-testing the correctness of my compositional functions (model_match -> which combines math components together)
 3. Unit-testing the correctness of my matchmaking assumption (do queue players actually match in the way I expect, or should expect?)
-
-TODO:
-* double-check completeness of math component test suite
-* double-check and possibly document the model match test, and ensure that it remains flexible to changing weights
 
 12/08/2026
 For the problem of generator and strategy coupling, could use a factory method to configure both components together, and ensure that they never are configured independently. May add some complexity, will have to see how much it actually is.
