@@ -108,9 +108,9 @@ def _queue_matching_function(
     optimisation_method: BTOptimisationMethod,
 ) -> tuple[list[ActiveMatch], list[Player]]:
     """
-    This can be viewed as the global objective function that:
-        - Takes the whole queue and finds the optimum configuration of teams
-        - and additionally can be configured with different approaches to this optimisation
+    This is a wrapper for the global objective function that takes the whole queue
+    and finds the optimum configuration of teams. The wrapper allows for different
+    approaches to this optimisation to be configured.
     """
     result: tuple[list[ActiveMatch], list[Player]] = ([], [])
 
