@@ -137,7 +137,7 @@ def _greedy_optimisation(
             match.request_A.player in matched_players
             or match.request_B.player in matched_players
         ):
-            pass
+            continue
 
         chosen_matches.append(
             ActiveMatch([match.request_A.player], [match.request_B.player])
