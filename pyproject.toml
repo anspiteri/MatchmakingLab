@@ -26,3 +26,15 @@ packages = ["matchmakinglab"]
 
 [tool.fastapi]
 entrypoint = "matchmakinglab.api:app"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff.lint]
+# Ignores F841 (Unused variable) globally
+ignore = ["F841"]
+
+[tool.pyrefly]
+# Disables unused local variable warnings and hints
+disable-unused-local = true
