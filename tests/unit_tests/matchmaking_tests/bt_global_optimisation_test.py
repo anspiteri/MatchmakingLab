@@ -45,15 +45,18 @@ def test_queue_matching_composition(mocker, method):
         return_value=([], []),
     )
 
-    matches, players_matched = _queue_matching_function(match_models, method)
-
     match method:
         case BTOptimisationMethod.UNDEFINED:
-            greedy_mock.assert_not_called()
-            assert matches == []
-            assert players_matched == []
+            with pytest.raises(ValueError):
+                matches, players_matched = _queue_matching_function(
+                    match_models, method
+                )
+                greedy_mock.assert_not_called()
+                assert matches == []
+                assert players_matched == []
 
         case BTOptimisationMethod.GREEDY:
+            matches, players_matched = _queue_matching_function(match_models, method)
             greedy_mock.assert_called_once_with(match_models)
             assert matches == []
             assert players_matched == []
