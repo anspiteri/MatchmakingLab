@@ -91,7 +91,9 @@ class BradleyTerry(MatchmakingStrategy):
                     _model_match(A, B) for A, B in combinations(queue_snapshot, 2)
                 ]
             case _:
-                pass
+                raise ValueError(
+                    f"No implementation for candidate generation method: {self._candidate_generation_method}"
+                )
 
         matches, players_matched = _queue_matching_function(
             match_models, self._optimisation_method
@@ -103,6 +105,9 @@ class BradleyTerry(MatchmakingStrategy):
 
 
 # --- MAIN ALGORITHMS & HELPER FUNCTIONS ---
+
+
+# Global Optitimisation
 def _queue_matching_function(
     match_models: list[MatchModel],
     optimisation_method: BTOptimisationMethod,
@@ -118,7 +123,9 @@ def _queue_matching_function(
         case BTOptimisationMethod.GREEDY:
             result = _greedy_optimisation(match_models)
         case _:
-            pass
+            raise ValueError(
+                f"No implementation for optimisation method: {optimisation_method}"
+            )
 
     return result
 
@@ -150,6 +157,7 @@ def _greedy_optimisation(
     return chosen_matches, matched_players
 
 
+# Match Modelling
 def _model_match(request_A: MatchRequest, request_B: MatchRequest) -> MatchModel:
     features_A = _extract_match_features(request_A)
     features_B = _extract_match_features(request_B)
@@ -214,6 +222,7 @@ def _extract_match_features(request: MatchRequest) -> MatchFeatures:
     )
 
 
+# Match Costing
 def _match_cost_function(
     competitiveness, latency_cost, region_difference, queue_time_benefit
 ) -> int:
