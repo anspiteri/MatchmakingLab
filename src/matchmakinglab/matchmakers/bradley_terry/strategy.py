@@ -99,7 +99,9 @@ class BradleyTerry(MatchmakingStrategy):
             match_models, self._optimisation_method
         )
 
-        remaining = list(set(queue_snapshot).difference(players_matched))
+        remaining = [
+            request for request in queue_snapshot if request not in players_matched
+        ]
 
         return matches, remaining
 
