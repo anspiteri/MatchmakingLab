@@ -1,6 +1,11 @@
 # Project Diary
 ## Backlog
 ### Urgent
+* finish BT test module
+* (**)implement second optimisation model
+* implement update player features to close loop
+* verify module / acceptance testing
+	- possibly also create some intuition tests
 
 ### Non-Urgent
 * double-check completeness of bt match model math component in test suite (21/08/2026)
