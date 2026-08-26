@@ -1,9 +1,9 @@
 # Project Diary
 ## Backlog
 ### Urgent
-* finish BT test module
+* finish BT test module ✅
 * (**)implement second optimisation model
-* implement update player features to close loop
+* implement update player features to close loop ✅
 * verify module / acceptance testing
 	- possibly also create some intuition tests
 
@@ -11,6 +11,7 @@
 * double-check completeness of bt match model math component in test suite (21/08/2026)
 * double-check and possibly document the bt model match tests, ensuring the tests are flexible to changing weights (21/08/2026)
 * assess whether it's worth changing the bt greedy approach to employ a queue-policy that halts matching after a certain time  (24/08/2026)
+* think about adjusting the BT skill-rating system to be log-likelihood based (26/08/2026)
 
 ## Log
 21/08/2026
