@@ -21,7 +21,14 @@ from matchmakinglab.matchmakers.bradley_terry.strategy import (
 )
 import pytest
 
-from matchmakinglab.models import REGION_KEY, ActiveMatch, MatchRequest, Player, Region
+from matchmakinglab.models import (
+    REGION_KEY,
+    ActiveMatch,
+    FinishedMatch,
+    MatchRequest,
+    Player,
+    Region,
+)
 
 
 @pytest.mark.parametrize(
@@ -57,8 +64,52 @@ def test_setup_player_features(candidate_generation_method, optimisation_method)
     assert result[SKILL_RATING_KEY] == BASE_SKILL_RATING
 
 
-def test_update_player_features():
-    pass
+@pytest.mark.parametrize(
+    "winner_skill, loser_skill, expected_winner_after, expected_loser_after",
+    [
+        # Equal skill — 50/50 probability, adjustment = 5
+        (100, 100, 105, 95),
+        # Winner stronger — probability = 0.6, adjustment = 4
+        (150, 100, 154, 96),
+        # Underdog wins — probability = 0.4, adjustment = 6
+        (100, 150, 106, 144),
+        # Loser floor at 1 — loser goes clearly negative
+        (4, 1, 6, 1),
+        # No floor — loser survives with small positive skill
+        (9, 2, 11, 1),
+    ],
+)
+def test_update_player_features(
+    winner_skill, loser_skill, expected_winner_after, expected_loser_after
+):
+    bt_instance = BradleyTerry()
+
+    winner = Player(0, "winner", {SKILL_RATING_KEY: winner_skill})
+    loser = Player(1, "loser", {SKILL_RATING_KEY: loser_skill})
+
+    match = FinishedMatch(winning_team=[winner], losing_team=[loser])
+
+    bt_instance.update_player_features(match)
+
+    assert winner.player_features[SKILL_RATING_KEY] == expected_winner_after
+    assert loser.player_features[SKILL_RATING_KEY] == expected_loser_after
+
+
+def test_update_player_features_asserts_on_empty_teams():
+    bt_instance = BradleyTerry()
+
+    winner = Player(0, "winner", {SKILL_RATING_KEY: 100})
+    loser = Player(1, "loser", {SKILL_RATING_KEY: 100})
+
+    with pytest.raises(AssertionError):
+        bt_instance.update_player_features(
+            FinishedMatch(winning_team=[], losing_team=[loser])
+        )
+
+    with pytest.raises(AssertionError):
+        bt_instance.update_player_features(
+            FinishedMatch(winning_team=[winner], losing_team=[])
+        )
 
 
 @pytest.mark.parametrize(

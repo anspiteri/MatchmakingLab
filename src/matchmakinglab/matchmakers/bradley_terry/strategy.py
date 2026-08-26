@@ -18,6 +18,8 @@ SKILL_RATING_KEY = "skill_rating"
 
 # --- WEIGHTS ---
 # Assumed to be positive scalars
+LEARNING_RATE = 10
+
 BASE_SKILL_RATING = 100
 
 TARGET_PROBABILITY = 50  # optimises for competitiveness i.e. 50/50 skill
@@ -74,7 +76,26 @@ class BradleyTerry(MatchmakingStrategy):
         return {SKILL_RATING_KEY: BASE_SKILL_RATING}
 
     def update_player_features(self, finished_match: FinishedMatch):
-        pass
+        assert len(finished_match.winning_team) > 0
+        assert len(finished_match.losing_team) > 0
+
+        winner = finished_match.winning_team[0]
+        loser = finished_match.losing_team[0]
+
+        probability = winner.player_features[SKILL_RATING_KEY] / (
+            winner.player_features[SKILL_RATING_KEY]
+            + loser.player_features[SKILL_RATING_KEY]
+        )
+
+        error = 1.0 - probability
+
+        adjustment = int(round(LEARNING_RATE * error))
+
+        winner.player_features[SKILL_RATING_KEY] += adjustment
+        loser.player_features[SKILL_RATING_KEY] -= adjustment
+
+        if loser.player_features[SKILL_RATING_KEY] <= 0:
+            loser.player_features[SKILL_RATING_KEY] = 1
 
     def run_algorithm(
         self, queue_snapshot: list[MatchRequest]
