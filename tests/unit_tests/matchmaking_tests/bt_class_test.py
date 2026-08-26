@@ -39,8 +39,22 @@ def test_class_init(candidate_generation_method, optimisation_method):
     assert bt_instance._optimisation_method == optimisation_method
 
 
-def test_setup_player_features():
-    pass
+@pytest.mark.parametrize(
+    "candidate_generation_method, optimisation_method",
+    [
+        (BTCandidateGenerationMethod.NAIVE, BTOptimisationMethod.GREEDY),
+        (BTCandidateGenerationMethod.NEAREST_NEIGHBOUR, BTOptimisationMethod.GREEDY),
+        (BTCandidateGenerationMethod.UNDEFINED, BTOptimisationMethod.UNDEFINED),
+    ],
+)
+def test_setup_player_features(candidate_generation_method, optimisation_method):
+    bt_instance = BradleyTerry(candidate_generation_method, optimisation_method)
+
+    result = bt_instance.setup_player_features()
+
+    assert isinstance(result, dict)
+    assert SKILL_RATING_KEY in result
+    assert result[SKILL_RATING_KEY] == BASE_SKILL_RATING
 
 
 def test_update_player_features():
