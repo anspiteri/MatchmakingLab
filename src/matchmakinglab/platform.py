@@ -24,7 +24,8 @@ class Platform:
 
     def tick(self, state: PlatformState):
         """
-        During tick(), Platform briefly shares matchmaking queue, active games, and finished matches with PlatformState
+        During tick(), Platform briefly shares matchmaking queue, active games, and
+        finished matches with PlatformState
         """
         self._match_players(
             state.get_matchmaking_queue(), state.get_active_games(), self._strategy
