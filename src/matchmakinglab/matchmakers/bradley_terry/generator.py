@@ -1,6 +1,6 @@
-from matchmakinglab.matchmakers import FeatureGenerator
+from matchmakinglab.matchmakers.base_generator import RequestGenerator
 
 
-class BradleyTerryGenerator(FeatureGenerator):
-    def generate(self):
+class BradleyTerryGenerator(RequestGenerator):
+    def start(self):
         pass

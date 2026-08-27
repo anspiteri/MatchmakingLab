@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 
-class FeatureGenerator(ABC):
+class RequestGenerator(ABC):
     @abstractmethod
-    def generate(self):
+    def start(self):
         pass
