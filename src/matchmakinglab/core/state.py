@@ -1,5 +1,5 @@
 from typing import Optional
-from matchmakinglab.models import MatchRequest, ActiveMatch, FinishedMatch, Player
+from matchmakinglab.core.models import MatchRequest, ActiveMatch, FinishedMatch, Player
 
 
 class PlatformState:

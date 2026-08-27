@@ -15,7 +15,7 @@ from matchmakinglab.matchmakers.bradley_terry.strategy import (
     BTOptimisationMethod,
     MatchModel,
 )
-from matchmakinglab.models import Player, MatchRequest
+from matchmakinglab.core.models import Player, MatchRequest
 
 # ---------- Composition Correctness -------------
 

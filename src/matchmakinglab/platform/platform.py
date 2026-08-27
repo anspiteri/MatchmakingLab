@@ -1,7 +1,7 @@
 from typing import Any, Optional
 from matchmakinglab.matchmakers import MatchmakingStrategy, BradleyTerry
-from matchmakinglab.state import PlatformState
-from matchmakinglab.models import ActiveMatch, FinishedMatch, MatchRequest, Player
+from matchmakinglab.core.state import PlatformState
+from matchmakinglab.core.models import ActiveMatch, FinishedMatch, MatchRequest, Player
 
 
 class Platform:

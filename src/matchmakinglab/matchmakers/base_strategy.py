@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from matchmakinglab.models import ActiveMatch, FinishedMatch, MatchRequest
+from matchmakinglab.core.models import ActiveMatch, FinishedMatch, MatchRequest
 
 
 class MatchmakingStrategy(ABC):

@@ -21,7 +21,7 @@ from matchmakinglab.matchmakers.bradley_terry.strategy import (
 )
 import pytest
 
-from matchmakinglab.models import (
+from matchmakinglab.core.models import (
     REGION_KEY,
     ActiveMatch,
     FinishedMatch,

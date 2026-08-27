@@ -20,7 +20,7 @@ from matchmakinglab.matchmakers.bradley_terry.strategy import (
     _region_difference,
     _queue_time_benefit,
 )
-from matchmakinglab.models import LATENCY_KEY, REGION_KEY, MatchRequest, Player, Region
+from matchmakinglab.core.models import LATENCY_KEY, REGION_KEY, MatchRequest, Player, Region
 
 
 # ---------- Composition Correctness -------------

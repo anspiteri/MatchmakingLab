@@ -3,7 +3,7 @@ from enum import Enum, auto
 from itertools import combinations
 from typing import Any
 from matchmakinglab.matchmakers import MatchmakingStrategy
-from matchmakinglab.models import (
+from matchmakinglab.core.models import (
     LATENCY_KEY,
     REGION_KEY,
     ActiveMatch,
