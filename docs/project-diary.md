@@ -1,13 +1,22 @@
 # Project Diary
 ## Backlog
-### Urgent
+### Important
+0.1 Requisites
 * finish BT test module ✅
-* (**)implement second optimisation model
 * implement update player features to close loop ✅
+* Working vertical slice
+	- simulator
+	- executable application
+	- display
+	- accompanying minimal test suites
 * verify module / acceptance testing
 	- possibly also create some intuition tests
+* polished readme, docs and visual demo / gifs
 
-### Non-Urgent
+Future
+* (**)implement second BT optimisation model
+
+### Not as Important
 * double-check completeness of bt match model math component in test suite (21/08/2026)
 * double-check and possibly document the bt model match tests, ensuring the tests are flexible to changing weights (21/08/2026)
 * assess whether it's worth changing the bt greedy approach to employ a queue-policy that halts matching after a certain time  (24/08/2026)
