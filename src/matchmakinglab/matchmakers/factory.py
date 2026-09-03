@@ -19,11 +19,11 @@ class MatchmakerFactory(ABC):
 
 
 class BradleyTerryFactory(MatchmakerFactory):
-    def __init__(self):
-        pass
+    def __init__(self, config: dict | None = None):
+        self._config = config or {}
 
     def create_platform(self) -> Platform:
-        return Platform(BradleyTerry())
+        return Platform(BradleyTerry(**self._config))
 
     def create_generator(self) -> RequestGenerator:
         return BradleyTerryGenerator()

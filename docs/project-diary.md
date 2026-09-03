@@ -6,7 +6,7 @@
 * implement update player features to close loop ✅
 * Working vertical slice
 	- simulator
-	- executable application
+	- executable application ✅
 	- display
 	- accompanying minimal test suites
 * verify module / acceptance testing
