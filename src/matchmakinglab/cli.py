@@ -1,6 +1,3 @@
-from matchmakinglab.matchmakers.factory import BradleyTerryFactory
-from matchmakinglab.platform.platform import Platform
-from matchmakinglab.app import App
 import click
 
 from matchmakinglab.matchmakers import (
@@ -8,6 +5,10 @@ from matchmakinglab.matchmakers import (
     BTOptimisationMethod,
 )
 from matchmakinglab.matchmakers.base_generator import RequestGenerator
+from matchmakinglab.matchmakers.factory import BradleyTerryFactory
+from matchmakinglab.platform.platform import Platform
+from matchmakinglab.platform.sim_harness import SimHarness
+from matchmakinglab.ui.app import MatchmakingLabApp
 
 # ── Strategy Registry ──────────────────────────────────────────────
 # To add a new strategy:
@@ -209,15 +210,54 @@ class _HelpCommand(click.Command):
     default=False,
     help="Boot with the default strategy (bradley-terry) using default config, skipping all prompts.",
 )
+@click.option(
+    "--headless",
+    is_flag=True,
+    default=False,
+    help="Run without the Textual UI, logging each tick's stats to stdout.",
+)
+@click.option(
+    "--ticks",
+    type=int,
+    default=1000,
+    help="Number of ticks to run in --headless mode.",
+)
+@click.option(
+    "--seed",
+    type=int,
+    default=None,
+    help="Seed for reproducible runs (plumbed through to the harness).",
+)
 @click.argument("config_values", nargs=-1)
 def cli(
     strategy: str,
     default: bool,
     config_values: tuple[str, ...],
+    headless: bool,
+    ticks: int,
+    seed: int,
 ):
     platform, generator = _run_setup(strategy, default, config_values)
 
     click.echo("Platform setup.")
 
-    app = App(platform, generator)
+    harness = SimHarness(generator, platform, seed=seed)
+    config_summary = f"strategy: {strategy or 'bradley-terry'}  {default and '(defaults)' or ''}".strip()
+
+    if headless:
+        _run_headless(harness, ticks)
+        return
+
+    app = MatchmakingLabApp(harness, config_summary=config_summary, seed=seed)
     app.run()
+
+
+def _run_headless(harness: SimHarness, ticks: int) -> None:
+    """Drive the harness without the TUI, printing per-tick stats to stdout."""
+    for _ in range(ticks):
+        snapshot = harness.step()
+        click.echo(
+            f"tick={snapshot.tick} queue={snapshot.queued} "
+            f"active={snapshot.active_matches} finished={snapshot.finished_matches} "
+            f"sim={snapshot.sim_seconds:0.1f}s"
+        )
