@@ -9,6 +9,7 @@
 	- executable application ✅
 	- display
 	- accompanying minimal test suites
+	- headless mode with logging to files or stdout
 * verify module / acceptance testing
 	- possibly also create some intuition tests
 * polished readme, docs and visual demo / gifs
