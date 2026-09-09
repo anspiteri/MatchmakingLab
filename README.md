@@ -24,7 +24,7 @@ To focus my time on my desired growth areas I've decided to use the following co
 - Mocking of player / client requests using a "generator" scripted in python
 - No auth or account management (all requests are treated as valid)
 - Simulated / random match results instead of real matches
-- Interactive CLI interface via [Click](https://click.palletsprojects.com/) and [Rich](https://github.com/Textualize/rich) instead of a production deployment
+- Interactive TUI via [Click](https://click.palletsprojects.com/) and [Textual](https://github.com/Textualize/textual) instead of a production deployment
 
 <br>
 
@@ -36,15 +36,16 @@ MatchmakingLab/
 |   ├── papers/               research papers referenced by the project
 |   └── bibliography.md
 ├── src/matchmakinglab/
-|   ├── core/                 shared data models and runtime state
+|   ├── core/                 shared data models, runtime state and sim snapshots
 |   ├── matchmakers/          matchmaking approaches (strategy pattern)
 |   |   ├── bradley_terry/    the Bradley-Terry implementation
 |   |   ├── base_strategy.py  abstract MatchmakingStrategy
 |   |   ├── base_generator.py abstract RequestGenerator
 |   |   └── factory.py        wires a strategy to its generator
-|   ├── platform/             platform orchestration and match simulation
-|   └── app.py                CLI entrypoint
-├── tests/                    unit tests
+|   ├── platform/             platform orchestration, match simulation and the SimHarness
+|   ├── ui/                   Textual TUI (app, event feed, stat panels)
+|   └── cli.py                CLI entrypoint
+├── tests/                    unit + integration (headless Textual) tests
 └── pyproject.toml            package metadata, dependencies and CLI script
 ```
 
@@ -55,7 +56,9 @@ The project uses a **strategy design pattern** to modularise different matchmaki
 
 A `MatchmakingStrategy` defines how players are matched (setup_features, running the matching algorithm, and updating features on finished matches), while a tightly-coupled `RequestGenerator` produces the input data a given approach expects. The `MatchmakerFactory` builds these tightly-coupled objects together so they are always configured consistently. Currently implemented approaches live under `matchmakers/bradley_terry/`.
 
-Configuration is driven from the CLI entrypoint (`app.py`), which offers an interactive guided setup on startup as well as promptless flag-based booting.
+A `SimHarness` (see `platform/sim_harness.py`) owns the full runtime composition — generator, platform, simulator and `PlatformState` — and exposes a single `step()` that returns a read-only `SimSnapshot`. The display layer only ever sees these snapshots, never the sim internals, so the simulation can be refactored freely beneath that boundary. That display layer is a [Textual](https://github.com/Textualize/textual) TUI in `matchmakinglab/ui/` driven by a tick timer, plus a headless mode that logs tick stats to stdout without the TUI.
+
+Configuration is driven from the CLI entrypoint (`cli.py`), which offers an interactive guided setup on startup as well as promptless flag-based booting.
 
 For more details on each module, see [architecture](./docs/architecture.md).
 
@@ -73,7 +76,7 @@ Afterwards, use the following to activate the environment when working on the pr
 For building the project into a runnable program use:
 `pip install -e ".[dev]"`
 
-The entrypoint is the `matchmakinglab` command (registered as the `matchmakinglab.app:cli` console script):
+The entrypoint is the `matchmakinglab` command (registered as the `matchmakinglab.cli:cli` console script):
 
 - **Interactive guided setup** — omitted options walk you through strategy selection and configuration:
   `matchmakinglab`
@@ -83,6 +86,12 @@ The entrypoint is the `matchmakinglab` command (registered as the `matchmakingla
 
 - **Boot with defaults, skipping all prompts**:
   `matchmakinglab --default`
+
+- **Headless mode** — run the simulation without the TUI, logging per-tick stats to stdout:
+  `matchmakinglab --default --headless --ticks 500`
+
+- **Seed** — pass a seed through to the harness for reproducible runs:
+  `matchmakinglab --default --seed 42`
 
 To see the full help, including each strategy's sub-configuration order, use:
 `matchmakinglab --help`

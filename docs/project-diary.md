@@ -24,6 +24,16 @@ Future
 * think about adjusting the BT skill-rating system to be log-likelihood based (26/08/2026)
 
 ## Log
+09/09/2026
+Migrated the display layer from a planned Rich-based live display to a full Textual TUI, and landed the display part of the vertical slice:
+
+- Dropped `rich` from dependencies; added `textual` (v8.x). Rich was declared but never imported anywhere, so this was a fresh build against Textual rather than a migration of existing Rich code.
+- Introduced a sim/display boundary: `SimHarness` (owns generator + platform + simulator + state) exposes `step() -> SimSnapshot`. The UI only ever sees snapshots, so Platform/Simulator/RequestGenerator can keep evolving without touching the UI.
+- Built the TUI (`matchmakinglab/ui/`) matching `docs/ui.md`: event feed, Platform/State panel, Analytics panel, status bar. Keybindings: Space pause, j/k speed (×2 multiplier), q quit. Wall-clock sim time.
+- Added headless mode (`--headless --ticks N`) that drives the same sim path with per-tick logging to stdout — keeps the sim testable without the TUI.
+- Fixed two pre-existing sim bugs that blocked the loop: `_match_players` reassigned a local instead of mutating the shared queue (so it never drained), and `run_algorithm` compared MatchRequests against Players when computing remaining (so nothing was ever tired as matched). Also bumped the generator to emit distinct players, and gave the simulator a match clock so matches actually finish.
+- Tests: headless sim-invariant tests (unit) + Textual `run_test` UI integration tests. 55 passing; pyright clean; no new ruff violations.
+
 21/08/2026
 Spent some time researching and thinking about test approaches. I think for the initial bradley-terry matchmaking tests, I'll split testing into three layers:
 1. Unit-testing the correctness of my maths components (bt_probability, latency_cost, etc...)
@@ -89,6 +99,7 @@ The README be both a good overview of the whole project, while also providing a 
 3. How will results be displayed on the client end? TUI.
 
 ### TUI
+- Decision: using [Textual](https://github.com/Textualize/textual) for the live display (see `docs/ui.md` for the mockup and `src/matchmakinglab/ui/` for the implementation).
 - For the TUI display, it could be really interesting to have a live window of the script executing against the API.
 - I'm going to try generating fresh data for each run as different approaches operate on their own set of features.
 	- It would be good to generate a log then to compare results from different approaches, as well as as a seed for recreating scenarios.
