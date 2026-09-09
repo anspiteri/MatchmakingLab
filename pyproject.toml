@@ -18,7 +18,7 @@ dev = [
 ]
 
 [project.scripts]
-matchmakinglab = "matchmakinglab.app:cli"
+matchmakinglab = "matchmakinglab.cli:cli"
 
 [build-system]
 requires = ["setuptools>=61.0"]
