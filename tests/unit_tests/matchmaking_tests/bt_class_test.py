@@ -152,7 +152,9 @@ def test_run_algorithm_composition(
     for req in queue_snapshot:
         req.req_features = {REGION_KEY: Region.OCEANIA}
 
-    players_matched = [queue_snapshot[index] for index in matched_indices]
+    players_matched = [
+        queue_snapshot[index].player for index in matched_indices
+    ]
 
     matching_result = (
         [ActiveMatch(match_cost=0)] if players_matched else [],

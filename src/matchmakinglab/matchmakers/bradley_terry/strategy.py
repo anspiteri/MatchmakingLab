@@ -121,7 +121,9 @@ class BradleyTerry(MatchmakingStrategy):
         )
 
         remaining = [
-            request for request in queue_snapshot if request not in players_matched
+            request
+            for request in queue_snapshot
+            if request.player not in players_matched
         ]
 
         return matches, remaining

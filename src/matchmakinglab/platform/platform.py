@@ -1,7 +1,8 @@
-from typing import Any, Optional
-from matchmakinglab.matchmakers import MatchmakingStrategy, BradleyTerry
-from matchmakinglab.core.state import PlatformState
+from typing import Any
+
 from matchmakinglab.core.models import ActiveMatch, FinishedMatch, MatchRequest, Player
+from matchmakinglab.core.state import PlatformState
+from matchmakinglab.matchmakers import BradleyTerry, MatchmakingStrategy
 
 
 class Platform:
@@ -13,7 +14,7 @@ class Platform:
         self, username: str, req_features: dict[str, Any], state: PlatformState
     ):
 
-        player: Optional[Player] = state.get_player(username)
+        player: Player | None = state.get_player(username)
 
         if player is None:
             player_features: dict[str, Any] = self._strategy.setup_player_features()
@@ -30,7 +31,6 @@ class Platform:
         self._match_players(
             state.get_matchmaking_queue(), state.get_active_games(), self._strategy
         )
-        self._simulate_matches()
         self._update_player_features(state.get_finished_matches(), self._strategy)
         self._increment_wait_time(state.get_matchmaking_queue())
 
@@ -44,10 +44,10 @@ class Platform:
         matches, remaining = strategy.run_algorithm(queue)
 
         active_matches.extend(matches)
-        queue = remaining
-
-    def _simulate_matches(self):
-        return None
+        # Mutate the shared queue in place so unmatched requests remain queued
+        # (reassigning a local would silently drop them from state).
+        queue.clear()
+        queue.extend(remaining)
 
     def _update_player_features(
         self, finished_matches: list[FinishedMatch], strategy: MatchmakingStrategy
