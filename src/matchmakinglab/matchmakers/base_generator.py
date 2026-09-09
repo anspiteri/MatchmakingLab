@@ -3,5 +3,5 @@ from abc import ABC, abstractmethod
 
 class RequestGenerator(ABC):
     @abstractmethod
-    def start(self):
+    def generate_requests(self, number) -> list:
         pass
