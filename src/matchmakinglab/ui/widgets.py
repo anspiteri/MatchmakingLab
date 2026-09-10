@@ -66,7 +66,7 @@ class StatusBar(Widget):
     """Bottom status line: run state, speed multiplier and binding hints."""
 
     running = reactive(True)
-    speed = reactive(1)
+    speed = reactive(1.0)
 
     can_focus = False
 

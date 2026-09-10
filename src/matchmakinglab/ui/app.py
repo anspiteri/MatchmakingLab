@@ -20,8 +20,8 @@ class MatchmakingLabApp(App):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("space", "toggle_pause", "Pause"),
-        Binding("j", "speed_up", "Speed +"),
-        Binding("k", "speed_down", "Speed -"),
+        Binding("j", "speed_down", "Speed -"),
+        Binding("k", "speed_up", "Speed +"),
         Binding("q", "quit_app", "Quit"),
     ]
 
@@ -89,7 +89,7 @@ class MatchmakingLabApp(App):
         self.config_summary = config_summary
         self.seed = seed if seed is not None else harness.seed
 
-        self.speed = 1
+        self.speed = 1.0
         self.paused = False
         self._timer = None
 
@@ -154,12 +154,12 @@ class MatchmakingLabApp(App):
         self._set_status()
 
     def action_speed_up(self) -> None:
-        self.speed *= 2
+        self.speed = min(8, self.speed * 2)
         self._restart_timer()
         self._set_status()
 
     def action_speed_down(self) -> None:
-        self.speed = max(1, self.speed // 2)
+        self.speed = max(0.25, self.speed / 2)
         self._restart_timer()
         self._set_status()
 
