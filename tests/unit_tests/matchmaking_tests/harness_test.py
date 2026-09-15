@@ -14,10 +14,10 @@ from matchmakinglab.platform.platform import Platform
 from matchmakinglab.platform.sim_harness import SimHarness
 
 
-def _make_harness(requests_per_step: int = 10) -> SimHarness:
+def _make_harness(requests_per_step: int = 10, seed: int | None = None) -> SimHarness:
     platform = Platform(BradleyTerry())
     return SimHarness(
-        gen.BradleyTerryGenerator(),
+        gen.BradleyTerryGenerator(seed=seed),
         platform,
         requests_per_step=requests_per_step,
     )
@@ -65,3 +65,72 @@ def test_full_run_produces_matches_without_crashing():
 
     assert snapshot.tick == 200
     assert snapshot.finished_matches > 0
+    assert snapshot.avg_match_len > 0
+
+
+def test_odd_request_rate_leaves_players_waiting():
+    # With an odd number of requests per step the queue does not drain fully,
+    # so some players accumulate wait time and drag avg_wait above zero.
+    harness = _make_harness(requests_per_step=3)
+
+    snapshot = None
+    for _ in range(10):
+        snapshot = harness.step()
+
+    assert snapshot.avg_wait > 0
+
+
+def test_events_track_the_full_match_lifecycle():
+    harness = _make_harness()
+
+    event_lines = set()
+    for _ in range(120):
+        snapshot = harness.step()
+        event_lines.update(snapshot.event_lines)
+
+    assert any("generated player" in line for line in event_lines)
+    assert any("queued player" in line for line in event_lines)
+    assert any("matched" in line and "↔" in line for line in event_lines)
+    assert any("match finished" in line for line in event_lines)
+    assert "ratings updated" in event_lines
+
+
+def test_same_seed_produces_identical_queue():
+    def run(seed):
+        harness = _make_harness(seed=seed)
+        for _ in range(30):
+            harness.step()
+        return harness.state.get_matchmaking_queue()
+
+    first = run(1)
+    second = run(1)
+
+    assert [req.player.username for req in first] == [
+        req.player.username for req in second
+    ]
+    assert [req.req_features for req in first] == [
+        req.req_features for req in second
+    ]
+
+
+def test_sim_seconds_and_request_rate_track_fake_clock():
+    class FakeClock:
+        def __init__(self):
+            self._value = 0.0
+
+        def __call__(self):
+            self._value += 1.0
+            return self._value
+
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(),
+        Platform(BradleyTerry()),
+        requests_per_step=10,
+        clock=FakeClock(),
+    )
+
+    harness.step()  # sim_seconds stays 0 on the first step
+    snapshot = harness.step()
+
+    assert snapshot.sim_seconds == 1.0
+    assert snapshot.request_rate == 20.0

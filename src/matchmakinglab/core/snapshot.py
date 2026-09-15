@@ -18,4 +18,5 @@ class SimSnapshot:
     request_rate: float = 0.0
     mean_quality: float = 0.0
     avg_wait: float = 0.0
+    avg_match_len: float = 0.0
     event_lines: list[str] = field(default_factory=list)

@@ -32,7 +32,7 @@ class SimHarness:
         generator: RequestGenerator,
         platform: Platform,
         simulator: Simulator | None = None,
-        requests_per_step: int = 10,
+        requests_per_step: int = 100,
         seed: int | None = None,
         clock: Callable[[], float] = _clock,
     ) -> None:
@@ -49,6 +49,9 @@ class SimHarness:
         self._tick = 0
         self._total_requests = 0
 
+        self._total_wait_time = 0
+        self._total_matched_players = 0
+
     def step(self) -> SimSnapshot:
         """Advance the simulation one tick and return a snapshot of the result."""
         events: list[str] = []
@@ -59,7 +62,9 @@ class SimHarness:
         for req in new_requests:
             user = req["user"]
             events.append(f"generated player {user}")
-            self.platform.add_to_matchmaking_queue(user, req["req_features"], self.state)
+            self.platform.add_to_matchmaking_queue(
+                user, req["req_features"], self.state
+            )
             events.append(f"queued player {user}")
 
         active_before = len(self.state.get_active_games())
@@ -69,7 +74,25 @@ class SimHarness:
             self.platform.strategy,
         )
 
+        self._total_wait_time += sum(
+            req.tick_wait_time
+            for p in proposals
+            for team in (p.team_A, p.team_B)
+            for req in team
+        )
+
+        self._total_matched_players += sum(
+            len(p.team_A) + len(p.team_B) for p in proposals
+        )
+
+        avg_wait_time = (
+            (self._total_wait_time / self._total_matched_players)
+            if self._total_matched_players != 0
+            else 0
+        )
+
         self.platform.start_matches(proposals, self.state.get_active_games())
+
         self.platform.update_player_features(
             self.state.get_finished_matches(), self.platform.strategy
         )
@@ -86,13 +109,21 @@ class SimHarness:
             self.state.get_active_games(), self.state.get_finished_matches()
         )
 
-        finished = self.state.get_finished_matches()[finished_before:]
-        for match in finished:
+        finished = self.state.get_finished_matches()
+
+        if len(finished) != 0:
+            avg_match_length = sum([m.match_length for m in finished]) / len(finished)
+        else:
+            avg_match_length = 0
+
+        newly_finished = finished[finished_before:]
+
+        for match in newly_finished:
             events.append(
                 f"match finished: {_fmt_team(match.winning_team)} "
                 f"vs {_fmt_team(match.losing_team)}"
             )
-        if finished:
+        if newly_finished:
             events.append("ratings updated")
 
         now = self._clock()
@@ -111,5 +142,7 @@ class SimHarness:
             request_rate=round(self._total_requests / self._sim_seconds, 1)
             if self._sim_seconds > 0
             else 0.0,
+            avg_wait=avg_wait_time,
+            avg_match_len=avg_match_length,
             event_lines=events,
         )

@@ -136,6 +136,8 @@ class MatchmakingLabApp(App):
         self.state_panel.sim_seconds = snapshot.sim_seconds
 
         self.analytics_panel.matches = snapshot.finished_matches
+        self.analytics_panel.avg_wait = snapshot.avg_wait
+        self.analytics_panel.avg_match_len = snapshot.avg_match_len
         self.analytics_panel.request_rate = snapshot.request_rate
 
         self.feed.append_events(snapshot.event_lines)

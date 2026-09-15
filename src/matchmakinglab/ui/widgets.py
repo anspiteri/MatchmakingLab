@@ -49,15 +49,15 @@ class AnalyticsPanel(_KeyValuePanel):
     """Analytics metrics (placeholders subject to change)."""
 
     matches = reactive(0)
-    mean_quality = reactive(0.0)
     avg_wait = reactive(0.0)
+    avg_match_len = reactive(0.0)
     request_rate = reactive(0.0)
 
     def _rows(self) -> list[tuple[str, str]]:
         return [
             ("Matches", f"{self.matches}"),
-            ("Mean quality", f"{self.mean_quality:0.1f}%"),
             ("Avg wait", f"{self.avg_wait:0.1f}s"),
+            ("Avg match length", f"{self.avg_match_len:0.1f}s"),
             ("Request rate", f"{self.request_rate:0.1f}/s"),
         ]
 
