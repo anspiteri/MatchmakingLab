@@ -1,7 +1,11 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from matchmakinglab.core.models import ActiveMatch, FinishedMatch, MatchRequest
+from matchmakinglab.core.models import (
+    FinishedMatch,
+    MatchProposal,
+    MatchRequest,
+)
 
 
 class MatchmakingStrategy(ABC):
@@ -16,5 +20,5 @@ class MatchmakingStrategy(ABC):
     @abstractmethod
     def run_algorithm(
         self, queue_snapshot: list[MatchRequest]
-    ) -> tuple[list[ActiveMatch], list[MatchRequest]]:
+    ) -> tuple[list[MatchProposal], list[MatchRequest]]:
         pass

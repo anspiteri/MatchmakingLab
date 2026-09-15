@@ -1,13 +1,15 @@
+import random
+
 from matchmakinglab.core.models import ActiveMatch, FinishedMatch
 
-# Placeholder: how many ticks a match runs before it finishes.
-MATCH_LENGTH_TICKS = 4
+MIN_TICK_TIME = 5  # below 5 ticks, guarentees match continues
+MAX_TICK_TIME = 60  # above 60 ticks, guarentees match end
 
 
 def _simulate_match(match: ActiveMatch) -> FinishedMatch:
     # TODO: actual match simulation maths (win logic etc.). Currently the
     # winning/losing teams are just the two teams in request order.
-    return FinishedMatch(match.team_A, match.team_B)
+    return FinishedMatch(match.tick_match_length, match.team_A, match.team_B)
 
 
 class Simulator:
@@ -23,7 +25,9 @@ class Simulator:
             match.tick_match_length += 1
 
         finished = [
-            m for m in active_matches if m.tick_match_length >= MATCH_LENGTH_TICKS
+            m
+            for m in active_matches
+            if m.tick_match_length > random.randint(MIN_TICK_TIME, MAX_TICK_TIME)
         ]
 
         for match in finished:

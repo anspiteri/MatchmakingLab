@@ -64,7 +64,16 @@ class SimHarness:
 
         active_before = len(self.state.get_active_games())
 
-        self.platform.tick(self.state)
+        proposals = self.platform.match_players(
+            self.state.get_matchmaking_queue(),
+            self.platform.strategy,
+        )
+
+        self.platform.start_matches(proposals, self.state.get_active_games())
+        self.platform.update_player_features(
+            self.state.get_finished_matches(), self.platform.strategy
+        )
+        self.platform.increment_wait_time(self.state.get_matchmaking_queue())
 
         for match in self.state.get_active_games()[active_before:]:
             events.append(

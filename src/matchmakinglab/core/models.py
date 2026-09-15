@@ -1,5 +1,5 @@
-from enum import StrEnum, unique
 from dataclasses import dataclass, field
+from enum import StrEnum, unique
 from typing import Any
 
 LATENCY_KEY = "latency"
@@ -32,6 +32,13 @@ class MatchRequest:
 
 
 @dataclass
+class MatchProposal:
+    match_cost: int
+    team_A: list[MatchRequest] = field(default_factory=list)
+    team_B: list[MatchRequest] = field(default_factory=list)
+
+
+@dataclass
 class ActiveMatch:
     match_cost: int
     team_A: list[Player] = field(default_factory=list)
@@ -41,5 +48,6 @@ class ActiveMatch:
 
 @dataclass
 class FinishedMatch:
+    match_length: int
     winning_team: list[Player] = field(default_factory=list)
     losing_team: list[Player] = field(default_factory=list)

@@ -2,16 +2,17 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from itertools import combinations
 from typing import Any
-from matchmakinglab.matchmakers import MatchmakingStrategy
+
 from matchmakinglab.core.models import (
     LATENCY_KEY,
     REGION_KEY,
-    ActiveMatch,
     FinishedMatch,
+    MatchProposal,
     MatchRequest,
     Player,
     Region,
 )
+from matchmakinglab.matchmakers import MatchmakingStrategy
 
 # --- KEYS ---
 SKILL_RATING_KEY = "skill_rating"
@@ -89,7 +90,7 @@ class BradleyTerry(MatchmakingStrategy):
 
         error = 1.0 - probability
 
-        adjustment = int(round(LEARNING_RATE * error))
+        adjustment = round(LEARNING_RATE * error)
 
         winner.player_features[SKILL_RATING_KEY] += adjustment
         loser.player_features[SKILL_RATING_KEY] -= adjustment
@@ -99,7 +100,7 @@ class BradleyTerry(MatchmakingStrategy):
 
     def run_algorithm(
         self, queue_snapshot: list[MatchRequest]
-    ) -> tuple[list[ActiveMatch], list[MatchRequest]]:
+    ) -> tuple[list[MatchProposal], list[MatchRequest]]:
 
         if len(queue_snapshot) == 0:
             return ([], queue_snapshot)
@@ -136,13 +137,13 @@ class BradleyTerry(MatchmakingStrategy):
 def _queue_matching_function(
     match_models: list[MatchModel],
     optimisation_method: BTOptimisationMethod,
-) -> tuple[list[ActiveMatch], list[Player]]:
+) -> tuple[list[MatchProposal], list[Player]]:
     """
     This is a wrapper for the global objective function that takes the whole queue
     and finds the optimum configuration of teams. The wrapper allows for different
     approaches to this optimisation to be configured.
     """
-    result: tuple[list[ActiveMatch], list[Player]] = ([], [])
+    result: tuple[list[MatchProposal], list[Player]] = ([], [])
 
     match optimisation_method:
         case BTOptimisationMethod.GREEDY:
@@ -157,12 +158,12 @@ def _queue_matching_function(
 
 def _greedy_optimisation(
     match_models: list[MatchModel],
-) -> tuple[list[ActiveMatch], list[Player]]:
+) -> tuple[list[MatchProposal], list[Player]]:
 
     match_models.sort(key=lambda x: x.match_cost)
 
     matched_players: list[Player] = []
-    chosen_matches: list[ActiveMatch] = []
+    chosen_matches: list[MatchProposal] = []
 
     for match in match_models:
         if (
@@ -172,9 +173,7 @@ def _greedy_optimisation(
             continue
 
         chosen_matches.append(
-            ActiveMatch(
-                match.match_cost, [match.request_A.player], [match.request_B.player]
-            )
+            MatchProposal(match.match_cost, [match.request_A], [match.request_B])
         )
         matched_players.append(match.request_A.player)
         matched_players.append(match.request_B.player)
@@ -267,7 +266,7 @@ def _bt_probability(i: int, j: int) -> int:
         return 50
 
     result = i / (i + j)
-    return int(round(result * 100))
+    return round(result * 100)
 
 
 def _competitiveness_score(bt_probability: int) -> int:

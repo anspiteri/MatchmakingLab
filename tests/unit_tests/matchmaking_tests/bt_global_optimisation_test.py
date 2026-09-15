@@ -145,8 +145,8 @@ def test_greedy_optimisation(model_data, expected_pairs, expected_cost):
 
     actual_pairs = {
         (
-            match.team_A[0].id,
-            match.team_B[0].id,
+            match.team_A[0].player.id,
+            match.team_B[0].player.id,
         )
         for match in matches
     }

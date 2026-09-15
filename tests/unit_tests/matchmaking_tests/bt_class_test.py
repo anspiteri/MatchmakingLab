@@ -87,7 +87,7 @@ def test_update_player_features(
     winner = Player(0, "winner", {SKILL_RATING_KEY: winner_skill})
     loser = Player(1, "loser", {SKILL_RATING_KEY: loser_skill})
 
-    match = FinishedMatch(winning_team=[winner], losing_team=[loser])
+    match = FinishedMatch(match_length=0, winning_team=[winner], losing_team=[loser])
 
     bt_instance.update_player_features(match)
 
@@ -103,12 +103,12 @@ def test_update_player_features_asserts_on_empty_teams():
 
     with pytest.raises(AssertionError):
         bt_instance.update_player_features(
-            FinishedMatch(winning_team=[], losing_team=[loser])
+            FinishedMatch(match_length=0, winning_team=[], losing_team=[loser])
         )
 
     with pytest.raises(AssertionError):
         bt_instance.update_player_features(
-            FinishedMatch(winning_team=[winner], losing_team=[])
+            FinishedMatch(match_length=0, winning_team=[winner], losing_team=[])
         )
 
 
