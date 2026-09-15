@@ -134,3 +134,29 @@ def test_sim_seconds_and_request_rate_track_fake_clock():
 
     assert snapshot.sim_seconds == 1.0
     assert snapshot.request_rate == 20.0
+
+
+def test_ratings_updated_once_per_finished_match():
+    """Each finished match applies rating updates exactly once, on completion."""
+    class RecordingBradleyTerry(BradleyTerry):
+        def __init__(self):
+            super().__init__()
+            self.updated_matches = []
+
+        def update_player_features(self, finished_match):
+            self.updated_matches.append(finished_match)
+            super().update_player_features(finished_match)
+
+    strategy = RecordingBradleyTerry()
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(),
+        Platform(strategy),
+        requests_per_step=10,
+    )
+
+    for _ in range(120):
+        harness.step()
+
+    finished = harness.state.get_finished_matches()
+    assert len(finished) > 0
+    assert len(strategy.updated_matches) == len(finished)

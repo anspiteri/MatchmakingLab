@@ -93,9 +93,6 @@ class SimHarness:
 
         self.platform.start_matches(proposals, self.state.get_active_games())
 
-        self.platform.update_player_features(
-            self.state.get_finished_matches(), self.platform.strategy
-        )
         self.platform.increment_wait_time(self.state.get_matchmaking_queue())
 
         for match in self.state.get_active_games()[active_before:]:
@@ -117,6 +114,10 @@ class SimHarness:
             avg_match_length = 0
 
         newly_finished = finished[finished_before:]
+
+        self.platform.update_player_features(
+            newly_finished, self.platform.strategy
+        )
 
         for match in newly_finished:
             events.append(
