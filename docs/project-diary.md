@@ -15,6 +15,7 @@
 * polished readme, docs and visual demo / gifs
 
 Future
+* refactor platform into sim-harness, have strategy & generator be configured as a part of sim harness
 * (**)implement second BT optimisation model
 
 ### Not as Important
