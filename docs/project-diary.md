@@ -14,6 +14,7 @@
 	- headless mode with logging to files or stdout
 	- Request Generator
 		- add new player state transitions to codebase ✅
+		- change generator to operate over a range of requests instead of a fixed number
 		- change feed display to differentiate NEW vs EXISTING requests
 * verify module / acceptance testing
 	- possibly also create some intuition tests
