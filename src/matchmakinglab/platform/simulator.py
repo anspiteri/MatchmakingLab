@@ -13,23 +13,25 @@ def _simulate_match(match: ActiveMatch) -> FinishedMatch:
 
 
 class Simulator:
-    def __init__(self) -> None:
-        pass
+    def __init__(self, seed: int | None = None) -> None:
+        self._rng = random.Random(seed)
 
-    def simulate_matches(
-        self, active_matches: list[ActiveMatch], finished_matches: list[FinishedMatch]
-    ):
+    def simulate_matches(self, active_matches: list[ActiveMatch]):
         # Advance the clock of every active match, then collect those that have
         # run for long enough. Two-pass avoids mutating the list while iterating.
+        result = []
+
         for match in active_matches:
             match.tick_match_length += 1
 
         finished = [
             m
             for m in active_matches
-            if m.tick_match_length > random.randint(MIN_TICK_TIME, MAX_TICK_TIME)
+            if m.tick_match_length > self._rng.randint(MIN_TICK_TIME, MAX_TICK_TIME)
         ]
 
         for match in finished:
             active_matches.remove(match)
-            finished_matches.append(_simulate_match(match))
+            result.append(_simulate_match(match))
+
+        return result

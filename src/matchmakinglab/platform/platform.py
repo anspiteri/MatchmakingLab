@@ -26,10 +26,18 @@ class Platform:
         player: Player | None = state.get_player(username)
 
         if player is None:
+            region = req_features.get(REGION_KEY)
+            if not region:
+                region = Region.OCEANIA
+
             player_features: dict[str, Any] = self.strategy.setup_player_features()
-            player = state.add_player(Player(self._id_count, username, player_features))
+            player = state.add_player(
+                Player(self._id_count, username, region, player_features)
+            )
+
             self._id_count += 1
 
+        player.status = PlayerStatus.QUEUING
         state.enqueue_match_req(MatchRequest(player, req_features))
 
     def match_players(
@@ -53,6 +61,20 @@ class Platform:
             team_A = [req.player for req in match.team_A]
             team_B = [req.player for req in match.team_B]
             active_matches.append(ActiveMatch(match.match_cost, team_A, team_B))
+
+            for player in team_A + team_B:
+                player.status = PlayerStatus.PLAYING
+
+    def end_matches(
+        self,
+        simulated_matches: list[FinishedMatch],
+        global_finished_list: list[FinishedMatch],
+    ):
+        for match in simulated_matches:
+            for player in match.winning_team + match.losing_team:
+                player.status = PlayerStatus.IDLE
+
+            global_finished_list.append(match)
 
     def update_player_features(
         self, finished_matches: list[FinishedMatch], strategy: MatchmakingStrategy

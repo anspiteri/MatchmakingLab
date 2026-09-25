@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from enum import StrEnum, unique
+from enum import Enum, StrEnum, auto, unique
 from typing import Any
 
 LATENCY_KEY = "latency"
@@ -17,11 +17,19 @@ class Region(StrEnum):
     UNDEFINED = "undefined"
 
 
+class PlayerStatus(Enum):
+    IDLE = auto()
+    QUEUING = auto()
+    PLAYING = auto()
+
+
 @dataclass
 class Player:
     id: int
     username: str
+    default_region: Region
     player_features: dict[str, Any] = field(default_factory=dict)
+    status: PlayerStatus = PlayerStatus.IDLE
 
 
 @dataclass

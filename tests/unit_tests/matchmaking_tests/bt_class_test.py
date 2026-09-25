@@ -7,18 +7,9 @@ strategy. These functions are concerned with providing an interface for the
 strategy within the platform execution environment.
 """
 
-from matchmakinglab.matchmakers.bradley_terry.strategy import _model_match
 from itertools import combinations
-from matchmakinglab.matchmakers.bradley_terry.strategy import (
-    BASE_SKILL_RATING,
-    SKILL_RATING_KEY,
-)
 from unittest.mock import Mock
-from matchmakinglab.matchmakers.bradley_terry.strategy import (
-    BTCandidateGenerationMethod,
-    BTOptimisationMethod,
-    BradleyTerry,
-)
+
 import pytest
 
 from matchmakinglab.core.models import (
@@ -28,6 +19,14 @@ from matchmakinglab.core.models import (
     MatchRequest,
     Player,
     Region,
+)
+from matchmakinglab.matchmakers.bradley_terry.strategy import (
+    BASE_SKILL_RATING,
+    SKILL_RATING_KEY,
+    BradleyTerry,
+    BTCandidateGenerationMethod,
+    BTOptimisationMethod,
+    _model_match,
 )
 
 
@@ -84,8 +83,8 @@ def test_update_player_features(
 ):
     bt_instance = BradleyTerry()
 
-    winner = Player(0, "winner", {SKILL_RATING_KEY: winner_skill})
-    loser = Player(1, "loser", {SKILL_RATING_KEY: loser_skill})
+    winner = Player(0, "winner", Region.OCEANIA, {SKILL_RATING_KEY: winner_skill})
+    loser = Player(1, "loser", Region.OCEANIA, {SKILL_RATING_KEY: loser_skill})
 
     match = FinishedMatch(match_length=0, winning_team=[winner], losing_team=[loser])
 
@@ -98,8 +97,8 @@ def test_update_player_features(
 def test_update_player_features_asserts_on_empty_teams():
     bt_instance = BradleyTerry()
 
-    winner = Player(0, "winner", {SKILL_RATING_KEY: 100})
-    loser = Player(1, "loser", {SKILL_RATING_KEY: 100})
+    winner = Player(0, "winner", Region.OCEANIA, {SKILL_RATING_KEY: 100})
+    loser = Player(1, "loser", Region.OCEANIA, {SKILL_RATING_KEY: 100})
 
     with pytest.raises(AssertionError):
         bt_instance.update_player_features(
@@ -122,20 +121,20 @@ def test_update_player_features_asserts_on_empty_teams():
         ),
         (
             [
-                MatchRequest(Player(0, "Alice", {SKILL_RATING_KEY: BASE_SKILL_RATING})),
-                MatchRequest(Player(1, "Bob", {SKILL_RATING_KEY: BASE_SKILL_RATING})),
+                MatchRequest(Player(0, "Alice", Region.OCEANIA, {SKILL_RATING_KEY: BASE_SKILL_RATING})),
+                MatchRequest(Player(1, "Bob", Region.OCEANIA, {SKILL_RATING_KEY: BASE_SKILL_RATING})),
             ],
             [0, 1],
             [],
         ),
         (
             [
-                MatchRequest(Player(0, "Alice", {SKILL_RATING_KEY: BASE_SKILL_RATING})),
+                MatchRequest(Player(0, "Alice", Region.OCEANIA, {SKILL_RATING_KEY: BASE_SKILL_RATING})),
                 MatchRequest(
-                    Player(1, "Bob", {SKILL_RATING_KEY: BASE_SKILL_RATING + 10})
+                    Player(1, "Bob", Region.OCEANIA, {SKILL_RATING_KEY: BASE_SKILL_RATING + 10})
                 ),
                 MatchRequest(
-                    Player(2, "Charlie", {SKILL_RATING_KEY: BASE_SKILL_RATING + 20})
+                    Player(2, "Charlie", Region.OCEANIA, {SKILL_RATING_KEY: BASE_SKILL_RATING + 20})
                 ),
             ],
             [0, 1],
@@ -197,6 +196,7 @@ def test_run_algorithm_raises_for_undefined_candidate_generation_method():
         Player(
             0,
             "Alice",
+            Region.OCEANIA,
             {SKILL_RATING_KEY: BASE_SKILL_RATING},
         ),
         {REGION_KEY: Region.OCEANIA},
