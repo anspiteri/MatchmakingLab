@@ -7,21 +7,27 @@ calculating the match cost of a pair of players.
 """
 
 import pytest
+
+from matchmakinglab.core.models import (
+    LATENCY_KEY,
+    REGION_KEY,
+    MatchRequest,
+    Player,
+    Region,
+)
 from matchmakinglab.matchmakers.bradley_terry.strategy import (
     BASE_SKILL_RATING,
     SKILL_RATING_KEY,
     MatchFeatures,
-    _match_cost_function,
-    _model_match,
-    _extract_match_features,
     _bt_probability,
     _competitiveness_score,
+    _extract_match_features,
     _latency_cost,
-    _region_difference,
+    _match_cost_function,
+    _model_match,
     _queue_time_benefit,
+    _region_difference,
 )
-from matchmakinglab.core.models import LATENCY_KEY, REGION_KEY, MatchRequest, Player, Region
-
 
 # ---------- Composition Correctness -------------
 
@@ -30,12 +36,14 @@ def test_model_match_composition(mocker):
     player_a = Player(
         0,
         "test_user_a",
+        Region.OCEANIA,
         {SKILL_RATING_KEY: BASE_SKILL_RATING},
     )
 
     player_b = Player(
         1,
         "test_user_b",
+        Region.ASIA,
         {SKILL_RATING_KEY: BASE_SKILL_RATING + int(BASE_SKILL_RATING / 2)},
     )
 
@@ -172,12 +180,14 @@ def test_model_match(
     player_a = Player(
         0,
         "test_user_a",
+        region_a,
         {SKILL_RATING_KEY: skill_rating_a},
     )
 
     player_b = Player(
         1,
         "test_user_b",
+        region_b,
         {SKILL_RATING_KEY: skill_rating_b},
     )
 
@@ -252,6 +262,7 @@ def test_extract_match_features(
     player = Player(
         0,
         "test_user",
+        region,
         player_features,
     )
 
@@ -274,6 +285,7 @@ def test_extract_match_features_invalid_skill(skill_rating):
     player = Player(
         0,
         "test_user",
+        Region.OCEANIA,
         {SKILL_RATING_KEY: skill_rating},
     )
 
@@ -297,6 +309,7 @@ def test_extract_match_features_invalid_latency(latency):
     player = Player(
         0,
         "test_user",
+        Region.OCEANIA,
         {SKILL_RATING_KEY: BASE_SKILL_RATING},
     )
 
@@ -320,6 +333,7 @@ def test_extract_match_features_invalid_region(region):
     player = Player(
         0,
         "test_user",
+        Region.OCEANIA,
         {SKILL_RATING_KEY: SKILL_RATING_KEY},
     )
 

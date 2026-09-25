@@ -6,16 +6,17 @@ This module tests the BradleyTerry matchmaking functions concerned with
 optimising pairwise configuration for a given set of queued players.
 """
 
+from unittest.mock import Mock
+
 import pytest
 
-from unittest.mock import Mock
+from matchmakinglab.core.models import MatchRequest, Player, Region
 from matchmakinglab.matchmakers.bradley_terry.strategy import (
-    _queue_matching_function,
-    _greedy_optimisation,
     BTOptimisationMethod,
     MatchModel,
+    _greedy_optimisation,
+    _queue_matching_function,
 )
-from matchmakinglab.core.models import Player, MatchRequest
 
 # ---------- Composition Correctness -------------
 
@@ -126,10 +127,10 @@ def test_queue_matching_composition(mocker, method):
 )
 def test_greedy_optimisation(model_data, expected_pairs, expected_cost):
     players = [
-        Player(0, "user_0", {}),
-        Player(1, "user_1", {}),
-        Player(2, "user_2", {}),
-        Player(3, "user_3", {}),
+        Player(0, "user_0", Region.OCEANIA),
+        Player(1, "user_1", Region.OCEANIA),
+        Player(2, "user_2", Region.OCEANIA),
+        Player(3, "user_3", Region.OCEANIA),
     ]
 
     match_models = [

@@ -14,6 +14,7 @@ from matchmakinglab.core.models import (
     MatchProposal,
     MatchRequest,
     Player,
+    PlayerStatus,
     Region,
 )
 from matchmakinglab.core.state import PlatformState
@@ -35,7 +36,7 @@ def _make_platform() -> tuple[Platform, PlatformState]:
 
 def test_state_add_and_get_player():
     state = PlatformState()
-    player = Player(0, "alice", {})
+    player = Player(0, "alice", Region.OCEANIA)
 
     assert state.add_player(player) is player
     assert state.get_player("alice") is player
@@ -44,12 +45,12 @@ def test_state_add_and_get_player():
 
 def test_state_queue_access_is_live():
     state = PlatformState()
-    req = MatchRequest(Player(0, "alice", {}))
+    req = MatchRequest(Player(0, "alice", Region.OCEANIA))
 
     state.enqueue_match_req(req)
     assert state.get_matchmaking_queue() == [req]
 
-    state.get_matchmaking_queue().append(MatchRequest(Player(1, "bob", {})))
+    state.get_matchmaking_queue().append(MatchRequest(Player(1, "bob", Region.OCEANIA)))
     assert len(state.get_matchmaking_queue()) == 2
 
 
@@ -112,7 +113,45 @@ def test_add_to_matchmaking_queue_assigns_distinct_ids():
     platform.add_to_matchmaking_queue("alice", _req_features(), state)
     platform.add_to_matchmaking_queue("bob", _req_features(), state)
 
-    assert state.get_player("alice").id != state.get_player("bob").id
+    alice = state.get_player("alice")
+    bob = state.get_player("bob")
+
+    assert alice is not None
+    assert bob is not None
+    assert alice.id != bob.id
+
+
+def test_add_to_matchmaking_queue_sets_status_queuing():
+    platform, state = _make_platform()
+
+    platform.add_to_matchmaking_queue("alice", _req_features(), state)
+    player = state.get_player("alice")
+    assert player is not None
+    assert player.status == PlayerStatus.QUEUING
+
+    # Re-queueing an existing player keeps the QUEUING status.
+    platform.add_to_matchmaking_queue("alice", _req_features(), state)
+    assert player.status == PlayerStatus.QUEUING
+
+
+def test_new_player_default_region_comes_from_request_features():
+    platform, state = _make_platform()
+
+    platform.add_to_matchmaking_queue("alice", {"latency": 25, "region": Region.EU}, state)
+
+    player = state.get_player("alice")
+    assert player is not None
+    assert player.default_region == Region.EU
+
+
+def test_new_player_default_region_falls_back_to_oceania():
+    platform, state = _make_platform()
+
+    platform.add_to_matchmaking_queue("alice", {"latency": 25}, state)
+
+    player = state.get_player("alice")
+    assert player is not None
+    assert player.default_region == Region.OCEANIA
 
 
 def test_match_players_drains_queue_in_place():
@@ -145,8 +184,8 @@ def test_match_players_leaves_unmatched_requests_queued():
 def test_start_matches_converts_proposals_to_active_matches():
     platform, _ = _make_platform()
 
-    alice = Player(0, "alice", {})
-    bob = Player(1, "bob", {})
+    alice = Player(0, "alice", Region.OCEANIA)
+    bob = Player(1, "bob", Region.OCEANIA)
     proposal = MatchProposal(
         match_cost=5,
         team_A=[MatchRequest(alice, {})],
@@ -161,6 +200,51 @@ def test_start_matches_converts_proposals_to_active_matches():
     assert active[0].team_A == [alice]
     assert active[0].team_B == [bob]
     assert active[0].tick_match_length == 0
+    assert alice.status == PlayerStatus.PLAYING
+    assert bob.status == PlayerStatus.PLAYING
+
+
+def test_end_matches_sets_players_idle_and_appends_finished():
+    platform, _ = _make_platform()
+    alice = Player(0, "alice", Region.OCEANIA, status=PlayerStatus.PLAYING)
+    bob = Player(1, "bob", Region.OCEANIA, status=PlayerStatus.PLAYING)
+    finished = FinishedMatch(match_length=7, winning_team=[alice], losing_team=[bob])
+    global_finished: list[FinishedMatch] = []
+
+    platform.end_matches([finished], global_finished)
+
+    assert alice.status == PlayerStatus.IDLE
+    assert bob.status == PlayerStatus.IDLE
+    assert global_finished == [finished]
+
+
+def test_full_player_state_cycle_via_simulator():
+    platform, state = _make_platform()
+    for name in ("alice", "bob"):
+        platform.add_to_matchmaking_queue(name, _req_features(), state)
+
+    queue = state.get_matchmaking_queue()
+    assert all(req.player.status == PlayerStatus.QUEUING for req in queue)
+
+    active: list[ActiveMatch] = []
+    platform.start_matches(platform.match_players(queue, platform.strategy), active)
+
+    players = [p for m in active for p in m.team_A + m.team_B]
+    assert players
+    assert all(p.status == PlayerStatus.PLAYING for p in players)
+
+    simulator = Simulator(seed=1)
+    finished: list[FinishedMatch] = []
+    for _ in range(200):
+        finished = simulator.simulate_matches(active)
+        if finished:
+            break
+
+    global_finished: list[FinishedMatch] = []
+    platform.end_matches(finished, global_finished)
+
+    assert all(p.status == PlayerStatus.IDLE for p in players)
+    assert global_finished == finished
 
 
 def test_update_player_features_delegates_to_strategy(mocker):
@@ -175,7 +259,7 @@ def test_update_player_features_delegates_to_strategy(mocker):
 
 def test_increment_wait_time():
     platform, _ = _make_platform()
-    req = MatchRequest(Player(0, "alice", {}))
+    req = MatchRequest(Player(0, "alice", Region.OCEANIA))
 
     platform.increment_wait_time([req])
 
@@ -191,11 +275,10 @@ def test_simulate_matches_advances_all_clocks(mocker):
         ActiveMatch(match_cost=1),
         ActiveMatch(match_cost=2),
     ]
-    finished: list[FinishedMatch] = []
 
     # Threshold above any current clock value -> nothing finishes.
-    mocker.patch("matchmakinglab.platform.simulator.random.randint", return_value=60)
-    simulator.simulate_matches(active, finished)
+    mocker.patch.object(simulator._rng, "randint", return_value=60)
+    finished = simulator.simulate_matches(active)
 
     assert [m.tick_match_length for m in active] == [1, 1]
     assert len(active) == 2
@@ -205,11 +288,10 @@ def test_simulate_matches_advances_all_clocks(mocker):
 def test_simulate_matches_completes_long_enough_matches(mocker):
     simulator = Simulator()
     active = [ActiveMatch(match_cost=1, tick_match_length=6)]
-    finished: list[FinishedMatch] = []
 
     # Low threshold -> the single match crosses it and finishes.
-    mocker.patch("matchmakinglab.platform.simulator.random.randint", return_value=5)
-    simulator.simulate_matches(active, finished)
+    mocker.patch.object(simulator._rng, "randint", return_value=5)
+    finished = simulator.simulate_matches(active)
 
     assert len(active) == 0
     assert len(finished) == 1
@@ -217,8 +299,8 @@ def test_simulate_matches_completes_long_enough_matches(mocker):
 
 
 def test_simulate_match_preserves_teams():
-    alice = Player(0, "alice", {})
-    bob = Player(1, "bob", {})
+    alice = Player(0, "alice", Region.OCEANIA)
+    bob = Player(1, "bob", Region.OCEANIA)
     match = ActiveMatch(
         match_cost=1, team_A=[alice], team_B=[bob], tick_match_length=9
     )
