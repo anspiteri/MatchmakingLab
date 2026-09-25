@@ -8,14 +8,19 @@
 	- simulator
 	- executable application ✅
 	- display
+		- add player population size to display
+		- add basic player info (region, ping, skill-rating, leaderboard, to event feed)
 	- accompanying minimal test suites
 	- headless mode with logging to files or stdout
+	- Request Generator
+		- add new player state transitions to codebase ✅
+		- change feed display to differentiate NEW vs EXISTING requests
 * verify module / acceptance testing
 	- possibly also create some intuition tests
 * polished readme, docs and visual demo / gifs
 
 Future
-* refactor platform into sim-harness, have strategy & generator be configured as a part of sim harness
+* refactor platform into sim-harness, have strategy & generator be configured as a part of sim harness or determine specific role of platform
 * (**)implement second BT optimisation model
 
 ### Not as Important
