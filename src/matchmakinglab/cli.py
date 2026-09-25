@@ -84,11 +84,15 @@ def _prompt_config(config_options: list[dict]) -> dict:
 def _build_help() -> str:
     """Build the long help text, documenting sub-config per strategy."""
     lines = [
-        "MatchmakingLab \u2014 a framework for prototyping and analysing "
-        "competitive matchmaking algorithms.",
+        (
+            "MatchmakingLab \u2014 a framework for prototyping and analysing "
+            "competitive matchmaking algorithms."
+        ),
         "",
-        "Without the --strategy or --default flags an interactive guided "
-        "setup will walk you through strategy selection and configuration.",
+        (
+            "Without the --strategy or --default flags an interactive guided "
+            "setup will walk you through strategy selection and configuration."
+        ),
         "",
         "Usage:",
         "  matchmakinglab                        interactive guided setup",
@@ -135,7 +139,7 @@ def _collect_config_from_positional(
 
 
 def _run_setup(
-    strategy: str, default: bool, config_values: tuple[str, ...]
+    strategy: str | None, default: bool, config_values: tuple[str, ...]
 ) -> tuple[Platform, RequestGenerator]:
     """Initialise the platform with the chosen strategy and config."""
     strategy_given = strategy is not None
@@ -150,6 +154,7 @@ def _run_setup(
             "Select matchmaking strategy", default=DEFAULT_STRATEGY, show_default=True
         )
 
+    assert strategy is not None
     strategy = strategy.lower()
 
     if strategy not in STRATEGIES:
