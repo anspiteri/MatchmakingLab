@@ -8,6 +8,7 @@ and independent of the TUI.
 """
 
 
+from matchmakinglab.core.snapshot import SimSnapshot
 from matchmakinglab.matchmakers.bradley_terry import generator as gen
 from matchmakinglab.matchmakers.bradley_terry.strategy import BradleyTerry
 from matchmakinglab.platform.platform import Platform
@@ -20,6 +21,7 @@ def _make_harness(requests_per_step: int = 10, seed: int | None = None) -> SimHa
         gen.BradleyTerryGenerator(seed=seed),
         platform,
         requests_per_step=requests_per_step,
+        seed=seed,
     )
 
 
@@ -60,9 +62,11 @@ def test_queue_eventually_produces_finished_matches():
 def test_full_run_produces_matches_without_crashing():
     harness = _make_harness()
 
+    snapshot: SimSnapshot | None = None
     for _ in range(200):
         snapshot = harness.step()
 
+    assert snapshot is not None
     assert snapshot.tick == 200
     assert snapshot.finished_matches > 0
     assert snapshot.avg_match_len > 0
@@ -73,10 +77,11 @@ def test_odd_request_rate_leaves_players_waiting():
     # so some players accumulate wait time and drag avg_wait above zero.
     harness = _make_harness(requests_per_step=3)
 
-    snapshot = None
+    snapshot: SimSnapshot | None = None
     for _ in range(10):
         snapshot = harness.step()
 
+    assert snapshot is not None
     assert snapshot.avg_wait > 0
 
 
