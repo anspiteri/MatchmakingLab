@@ -14,7 +14,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
-	"pytest-mock"
+	"pytest-mock",
+    "pytest-cov"
 ]
 
 [project.scripts]
@@ -39,3 +40,11 @@ ignore = ["F841"]
 [tool.pyrefly]
 # Disables unused local variable warnings and hints
 disable-unused-local = true
+
+[tool.coverage.run]
+source = ["matchmakinglab"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
