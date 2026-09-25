@@ -1,11 +1,14 @@
 from typing import Any
 
 from matchmakinglab.core.models import (
+    REGION_KEY,
     ActiveMatch,
     FinishedMatch,
     MatchProposal,
     MatchRequest,
     Player,
+    PlayerStatus,
+    Region,
 )
 from matchmakinglab.core.state import PlatformState
 from matchmakinglab.matchmakers import MatchmakingStrategy
