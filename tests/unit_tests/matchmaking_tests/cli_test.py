@@ -115,7 +115,9 @@ def test_run_setup_from_positional_config():
         "bradley-terry", False, ("nearest-neighbour", "greedy")
     )
 
-    assert platform.strategy._candidate_generation_method == (
+    strategy = platform.strategy
+    assert isinstance(strategy, BradleyTerry)
+    assert strategy._candidate_generation_method == (
         BTCandidateGenerationMethod.NEAREST_NEIGHBOUR
     )
 

@@ -1,10 +1,9 @@
-from typing import Optional
-from matchmakinglab.core.models import MatchRequest, ActiveMatch, FinishedMatch, Player
+from matchmakinglab.core.models import ActiveMatch, FinishedMatch, MatchRequest, Player
 
 
 class PlatformState:
     def __init__(self) -> None:
-        self._player_database: dict[str, Player] = {}
+        self.player_database: dict[str, Player] = {}
 
         self._matchmaking_queue: list[MatchRequest] = []
         self._active_matches: list[ActiveMatch] = []
@@ -14,11 +13,11 @@ class PlatformState:
         """
         Assumes that player is not already in the database, otherwise data corruption due to overwrite
         """
-        self._player_database[player.username] = player
+        self.player_database[player.username] = player
         return player
 
-    def get_player(self, username: str) -> Optional[Player]:
-        return self._player_database.get(username)
+    def get_player(self, username: str) -> Player | None:
+        return self.player_database.get(username)
 
     def enqueue_match_req(self, req: MatchRequest):
         self._matchmaking_queue.append(req)
