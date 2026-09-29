@@ -25,6 +25,22 @@ class PlayerStatus(Enum):
 
 @dataclass
 class Player:
+    """A single human account on the platform.
+
+    ``player_features`` is a strategy-owned bag of attributes. The core model
+    treats it as opaque: it defaults to empty and the platform does not populate
+    it. The active matchmaker decides both the keys it writes and the keys it
+    expects back, seeding them on creation via its own setup hook.
+
+    Consequently any code reading a strategy-specific key must tolerate its
+    absence — use ``dict.get`` and validate, rather than subscripting — otherwise
+    a player that was not created by that strategy's platform (a hand-built
+    fixture, another matchmaker's leftover state) raises ``KeyError`` or silently
+    models an unrated player. ``tests.helpers.make_player`` deliberately leaves
+    the bag empty for that reason; use ``make_skill_player`` when a test needs a
+    seeded database.
+    """
+
     id: int
     username: str
     wins: int
