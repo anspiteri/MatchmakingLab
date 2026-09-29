@@ -420,3 +420,93 @@ def test_returning_players_are_never_new_signups():
 # credited the player with both a win and a loss and applied a net-zero rating
 # adjustment. Fixed in the generator (distinct users per batch) and in the
 # matcher (self-pairs are not candidates); these tests hold both layers in place.
+
+
+# ---------- Self-match regression ----------
+# A batch used to be able to name the same player twice, and BT's greedy matcher
+# then treated the resulting "A vs A" candidate as a legitimate pair: one match
+# credited the player with both a win and a loss and applied a net-zero rating
+# adjustment. Fixed in the generator (distinct users per batch) and in the
+# matcher (self-pairs are not candidates); these tests hold both layers in place.
+
+
+def test_no_player_appears_in_both_teams_of_a_finished_match():
+    harness = _make_harness(requests_per_step=10, seed=4)
+
+    _run(harness, 80)
+
+    for match in harness.state.get_finished_matches():
+        winners = {p.id for p in match.winning_team}
+        losers = {p.id for p in match.losing_team}
+        assert not winners & losers
+
+
+def test_win_and_loss_ledger_matches_the_finished_matches():
+    """`wins`/`loses` are cumulative counters, so check them against the record.
+
+    An earlier version of this test asserted `sum(p.wins for p in
+    match.winning_team) == 1`, which only holds for a player's first win. The
+    invariant that actually matters is that the counters agree with the matches
+    that were played, and that no single match contributed to both sides for the
+    same player.
+    """
+    harness = _make_harness(requests_per_step=10, seed=4)
+
+    _run(harness, 80)
+
+    expected_wins: dict[int, int] = {}
+    expected_loses: dict[int, int] = {}
+
+    for match in harness.state.get_finished_matches():
+        for player in match.winning_team:
+            expected_wins[player.id] = expected_wins.get(player.id, 0) + 1
+        for player in match.losing_team:
+            expected_loses[player.id] = expected_loses.get(player.id, 0) + 1
+
+    # A self-match would put the same player in both columns of the same row.
+    for match in harness.state.get_finished_matches():
+        ids_a = {p.id for p in match.winning_team}
+        ids_b = {p.id for p in match.losing_team}
+        assert not ids_a & ids_b
+
+    for player in harness.state.player_database.values():
+        assert player.wins == expected_wins.get(player.id, 0), (
+            f"{player.username} win count disagrees with the match record"
+        )
+        assert player.loses == expected_loses.get(player.id, 0), (
+            f"{player.username} loss count disagrees with the match record"
+        )
+
+
+def test_finished_teams_always_have_distinct_members():
+    harness = _make_harness(requests_per_step=10, seed=4)
+
+    _run(harness, 80)
+
+    for match in harness.state.get_finished_matches():
+        winners = [p.id for p in match.winning_team]
+        losers = [p.id for p in match.losing_team]
+        assert len(winners) == len(set(winners))
+        assert len(losers) == len(set(losers))
+
+
+def test_self_match_defect_is_fixed_at_the_generator():
+    """Pins the root cause: distinct users within a single generated batch."""
+    generator = gen.BradleyTerryGenerator(player_count=6, seed=1)
+    database = {
+        req["user"]: make_skill_player(i, req["user"], status=PlayerStatus.IDLE)
+        for i, req in enumerate(generator.generate_requests(3, {}))
+    }
+    generator.generate_requests(3, {})  # exhaust the pool -> existing-only mode
+
+    requests = generator.generate_requests(5, database)
+    users = [req["user"] for req in requests if req["is_new"] is False]
+
+    assert users, "expected existing-player requests"
+    assert len(users) == len(set(users)), (
+        "The generator drew the same idle player more than once in one batch; "
+        "nothing downstream guards against matching a player with themselves."
+    )
+    # Only three distinct idle players exist, so the batch is capped by
+    # availability rather than the requested count.
+    assert len(users) == len(database)

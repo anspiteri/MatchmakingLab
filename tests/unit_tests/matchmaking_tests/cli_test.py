@@ -111,9 +111,7 @@ def test_run_setup_defaults():
 
 
 def test_run_setup_from_positional_config():
-    platform, _ = _run_setup(
-        "bradley-terry", False, ("nearest-neighbour", "greedy")
-    )
+    platform, _ = _run_setup("bradley-terry", False, ("nearest-neighbour", "greedy"))
 
     strategy = platform.strategy
     assert isinstance(strategy, BradleyTerry)

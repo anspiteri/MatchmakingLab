@@ -74,6 +74,15 @@ class BradleyTerry(MatchmakingStrategy):
         self._optimisation_method = optimisation_method
 
     def setup_player_features(self) -> dict[str, Any]:
+        """Seed ``Player.player_features`` for a newly created player.
+
+        The platform applies this when it creates a player, which is the only
+        thing that guarantees SKILL_RATING_KEY is present. Any code that needs
+        the rating must therefore read it defensively, as _extract_match_features
+        does, so a player built outside this platform surfaces a clear error
+        instead of a bare KeyError.
+        """
+
         return {SKILL_RATING_KEY: BASE_SKILL_RATING}
 
     def update_player_features(self, finished_match: FinishedMatch):
@@ -83,6 +92,10 @@ class BradleyTerry(MatchmakingStrategy):
         winner = finished_match.winning_team[0]
         loser = finished_match.losing_team[0]
 
+        # Subscripted deliberately: this runs only for players the platform
+        # created, and by the time a match finishes every queued player has
+        # already been through _extract_match_features, which rejects an unrated
+        # or malformed rating before any of this arithmetic happens.
         probability = winner.player_features[SKILL_RATING_KEY] / (
             winner.player_features[SKILL_RATING_KEY]
             + loser.player_features[SKILL_RATING_KEY]
@@ -109,8 +122,15 @@ class BradleyTerry(MatchmakingStrategy):
 
         match self._candidate_generation_method:
             case BTCandidateGenerationMethod.NAIVE:
+                # A player cannot be their own opponent, so any pair naming the
+                # same player on both sides is not a candidate at all. The
+                # generator should not emit duplicate requests for one player, but
+                # self-pairing is a correctness invariant of the matcher rather
+                # than a property of its input.
                 match_models = [
-                    _model_match(A, B) for A, B in combinations(queue_snapshot, 2)
+                    _model_match(A, B)
+                    for A, B in combinations(queue_snapshot, 2)
+                    if A.player != B.player
                 ]
             case _:
                 raise ValueError(
@@ -167,7 +187,8 @@ def _greedy_optimisation(
 
     for match in match_models:
         if (
-            match.request_A.player in matched_players
+            match.request_A.player == match.request_B.player
+            or match.request_A.player in matched_players
             or match.request_B.player in matched_players
         ):
             continue
@@ -211,6 +232,13 @@ def _model_match(request_A: MatchRequest, request_B: MatchRequest) -> MatchModel
 
 
 def _extract_match_features(request: MatchRequest) -> MatchFeatures:
+    """Pull matchable attributes off a queued request, validating as we go.
+
+    Uses .get for SKILL_RATING_KEY so a player whose player_features were never
+    seeded by setup_player_features fails with a named ValueError here, rather
+    than a KeyError deeper in candidate generation.
+    """
+
     skill_rating = request.player.player_features.get(SKILL_RATING_KEY)
 
     if skill_rating is None:
