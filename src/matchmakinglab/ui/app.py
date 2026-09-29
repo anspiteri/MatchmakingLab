@@ -130,7 +130,9 @@ class MatchmakingLabApp(App):
 
         snapshot = self.harness.step()
 
-        self.state_panel.queued = snapshot.queued
+        self.state_panel.population_size = snapshot.population_size
+        self.state_panel.queue_size = len(snapshot.queue)
+        self.state_panel.queue = snapshot.queue
         self.state_panel.active = snapshot.active_matches
         self.state_panel.tick = snapshot.tick
         self.state_panel.sim_seconds = snapshot.sim_seconds

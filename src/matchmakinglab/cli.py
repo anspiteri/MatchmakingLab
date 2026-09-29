@@ -262,7 +262,7 @@ def _run_headless(harness: SimHarness, ticks: int) -> None:
     for _ in range(ticks):
         snapshot = harness.step()
         click.echo(
-            f"tick={snapshot.tick} queue={snapshot.queued} "
+            f"tick={snapshot.tick} queue={len(snapshot.queue)} "
             f"active={snapshot.active_matches} finished={snapshot.finished_matches} "
             f"sim={snapshot.sim_seconds:0.1f}s"
         )

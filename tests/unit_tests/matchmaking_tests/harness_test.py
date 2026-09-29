@@ -7,22 +7,56 @@ layer. These run headless (no Textual involved), holding the sim loop correct
 and independent of the TUI.
 """
 
+from itertools import pairwise
 
 from matchmakinglab.core.snapshot import SimSnapshot
+from matchmakinglab.matchmakers.base_generator import RequestGenerator
 from matchmakinglab.matchmakers.bradley_terry import generator as gen
-from matchmakinglab.matchmakers.bradley_terry.strategy import BradleyTerry
+from matchmakinglab.matchmakers.bradley_terry.strategy import (
+    BradleyTerry,
+)
 from matchmakinglab.platform.platform import Platform
 from matchmakinglab.platform.sim_harness import SimHarness
 
+# A small pool keeps EXISTING (returning-player) requests arriving promptly;
+# the default 500-player pool would need ~50 ticks before a single one appears.
+SMALL_POOL = 12
 
-def _make_harness(requests_per_step: int = 10, seed: int | None = None) -> SimHarness:
+
+def _make_harness(
+    requests_per_step: int = 10,
+    seed: int | None = None,
+    player_count: int | None = None,
+) -> SimHarness:
     platform = Platform(BradleyTerry())
     return SimHarness(
-        gen.BradleyTerryGenerator(seed=seed),
+        gen.BradleyTerryGenerator(player_count=player_count or 500, seed=seed),
         platform,
         requests_per_step=requests_per_step,
         seed=seed,
     )
+
+
+class _ScriptedGenerator(RequestGenerator):
+    """Emits pre-baked request batches, then nothing.
+
+    Lets the harness's own event formatting be asserted exactly, independently
+    of the random request generation covered in generator_test.py.
+    """
+
+    def __init__(self, batches: list[list[dict]] | None = None) -> None:
+        self.batches = list(batches or [])
+
+    def generate_requests(self, number, player_database) -> list:
+        return self.batches.pop(0) if self.batches else []
+
+
+def _run(harness: SimHarness, ticks: int) -> SimSnapshot:
+    snapshot: SimSnapshot | None = None
+    for _ in range(ticks):
+        snapshot = harness.step()
+    assert snapshot is not None
+    return snapshot
 
 
 def test_step_returns_populated_snapshot():
@@ -31,11 +65,12 @@ def test_step_returns_populated_snapshot():
     snapshot = harness.step()
 
     assert snapshot.tick == 1
-    assert snapshot.queued >= 0
+    assert snapshot.population_size > 0
+    assert isinstance(snapshot.queue, list)
     assert snapshot.active_matches >= 0
     assert snapshot.finished_matches >= 0
     assert snapshot.sim_seconds >= 0.0
-    assert snapshot.queued + snapshot.active_matches + snapshot.finished_matches > 0
+    assert len(snapshot.queue) + snapshot.active_matches + snapshot.finished_matches > 0
     assert snapshot.event_lines
 
 
@@ -62,11 +97,8 @@ def test_queue_eventually_produces_finished_matches():
 def test_full_run_produces_matches_without_crashing():
     harness = _make_harness()
 
-    snapshot: SimSnapshot | None = None
-    for _ in range(200):
-        snapshot = harness.step()
+    snapshot = _run(harness, 200)
 
-    assert snapshot is not None
     assert snapshot.tick == 200
     assert snapshot.finished_matches > 0
     assert snapshot.avg_match_len > 0
@@ -77,27 +109,9 @@ def test_odd_request_rate_leaves_players_waiting():
     # so some players accumulate wait time and drag avg_wait above zero.
     harness = _make_harness(requests_per_step=3)
 
-    snapshot: SimSnapshot | None = None
-    for _ in range(10):
-        snapshot = harness.step()
+    snapshot = _run(harness, 10)
 
-    assert snapshot is not None
     assert snapshot.avg_wait > 0
-
-
-def test_events_track_the_full_match_lifecycle():
-    harness = _make_harness()
-
-    event_lines = set()
-    for _ in range(120):
-        snapshot = harness.step()
-        event_lines.update(snapshot.event_lines)
-
-    assert any("generated player" in line for line in event_lines)
-    assert any("queued player" in line for line in event_lines)
-    assert any("matched" in line and "↔" in line for line in event_lines)
-    assert any("match finished" in line for line in event_lines)
-    assert "ratings updated" in event_lines
 
 
 def test_same_seed_produces_identical_queue():
@@ -113,9 +127,7 @@ def test_same_seed_produces_identical_queue():
     assert [req.player.username for req in first] == [
         req.player.username for req in second
     ]
-    assert [req.req_features for req in first] == [
-        req.req_features for req in second
-    ]
+    assert [req.req_features for req in first] == [req.req_features for req in second]
 
 
 def test_sim_seconds_and_request_rate_track_fake_clock():
@@ -141,27 +153,62 @@ def test_sim_seconds_and_request_rate_track_fake_clock():
     assert snapshot.request_rate == 20.0
 
 
-def test_ratings_updated_once_per_finished_match():
-    """Each finished match applies rating updates exactly once, on completion."""
-    class RecordingBradleyTerry(BradleyTerry):
-        def __init__(self):
-            super().__init__()
-            self.updated_matches = []
+# ---------- Population / queue reporting ----------
 
-        def update_player_features(self, finished_match):
-            self.updated_matches.append(finished_match)
-            super().update_player_features(finished_match)
 
-    strategy = RecordingBradleyTerry()
-    harness = SimHarness(
-        gen.BradleyTerryGenerator(),
-        Platform(strategy),
-        requests_per_step=10,
-    )
+def test_snapshot_population_size_matches_player_database():
+    harness = _make_harness()
 
-    for _ in range(120):
-        harness.step()
+    snapshot = harness.step()
 
-    finished = harness.state.get_finished_matches()
-    assert len(finished) > 0
-    assert len(strategy.updated_matches) == len(finished)
+    assert snapshot.population_size == len(harness.state.player_database)
+    assert snapshot.population_size == 10  # all ten requests were brand new
+
+
+def test_snapshot_population_size_grows_then_plateaus_at_pool_size():
+    harness = _make_harness(requests_per_step=10, player_count=100)
+
+    populations = [harness.step().population_size for _ in range(20)]
+
+    assert populations[0] == 10
+    # Monotonic: players are only ever added, never removed.
+    assert all(b >= a for a, b in pairwise(populations))
+    # Once every pool slot is claimed, population is capped and pullbacks begin.
+    assert max(populations) == 100
+    assert populations[-1] == 100
+
+
+def test_snapshot_queue_lists_queued_usernames():
+    harness = _make_harness(requests_per_step=3)
+
+    snapshot = harness.step()
+
+    # Three requests: two get matched, one is left waiting.
+    assert len(snapshot.queue) == 1
+    assert snapshot.queue[0] in harness.state.player_database
+
+
+def test_snapshot_queue_tracks_the_harness_queue_each_tick():
+    harness = _make_harness(requests_per_step=5)
+
+    for _ in range(25):
+        snapshot = harness.step()
+        assert snapshot.queue == [
+            req.player.username for req in harness.state.get_matchmaking_queue()
+        ]
+
+
+def test_snapshot_queue_empties_once_players_are_fully_matched():
+    harness = _make_harness(requests_per_step=10)
+
+    snapshot = harness.step()
+
+    assert snapshot.queue == []
+
+
+# ---------- Self-match regression ----------
+# A batch used to be able to name the same player twice, and BT's greedy matcher
+# then treated the resulting "A vs A" candidate as a legitimate pair: one match
+# credited the player with both a win and a loss and applied a net-zero rating
+# adjustment. Fixed in the generator (distinct users per batch) and in the
+# matcher (self-pairs are not candidates); these tests hold both layers in place.

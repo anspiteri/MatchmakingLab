@@ -7,22 +7,72 @@ terminal. Each widget's ``render()`` builds a plain string from its reactive
 values, so these run headlessly.
 """
 
-from matchmakinglab.ui.widgets import AnalyticsPanel, StatePanel, StatusBar
+import pytest
+
+from matchmakinglab.ui.widgets import (
+    AnalyticsPanel,
+    EventFeed,
+    StatePanel,
+    StatusBar,
+    _KeyValuePanel,
+)
 
 
 def test_state_panel_render_rows():
     panel = StatePanel()
-    panel.queued = 3
+    panel.population_size = 128
     panel.active = 2
     panel.tick = 12
     panel.sim_seconds = 2.5
+    panel.queue_size = 3
+    panel.queue = ["alice", "bob", "carol"]
 
     text = panel.render()
 
-    assert "Queue" in text and "3" in text
+    assert "Population size" in text and "128" in text
     assert "Active matches" in text and "2" in text
     assert "Tick" in text and "12" in text
     assert "Sim time" in text and "2.5s" in text
+    assert "Queue size" in text and "3" in text
+    assert "Queue" in text and "alice" in text and "carol" in text
+
+
+def test_state_panel_shows_queue_members_not_just_a_count():
+    """The panel names the waiting players, not just how many there are."""
+    panel = StatePanel()
+    panel.queue_size = 2
+    panel.queue = ["dana", "eli"]
+
+    text = panel.render()
+
+    assert "dana" in text
+    assert "eli" in text
+
+
+def test_state_panel_renders_empty_queue_without_error():
+    panel = StatePanel()
+    panel.queue = []
+
+    text = panel.render()
+
+    assert "Queue size" in text
+    assert "[]" in text
+
+
+def test_state_panel_defaults_are_empty():
+    panel = StatePanel()
+
+    assert panel.population_size == 0
+    assert panel.queue_size == 0
+    assert panel.queue == []
+    assert panel.render()
+
+
+def test_state_panel_formats_large_ticks_with_separators():
+    panel = StatePanel()
+    panel.tick = 1234567
+
+    assert "1,234,567" in panel.render()
 
 
 def test_analytics_panel_render_rows():
@@ -59,3 +109,43 @@ def test_status_bar_render_paused():
     text = bar.render()
 
     assert "PAUSED" in text
+
+
+def test_key_value_panel_requires_rows_implementation():
+    class Incomplete(_KeyValuePanel):
+        pass
+
+    with pytest.raises(NotImplementedError):
+        Incomplete().render()
+
+
+def test_event_feed_writes_prefixed_lines():
+    """append_events writes one prefixed line per event into the log."""
+
+    class RecordingLog(EventFeed):
+        def __init__(self):
+            self.written: list[str] = []
+
+        def write(self, text):
+            self.written.append(text)
+
+    feed = RecordingLog()
+
+    feed.append_events(["first", "second"])
+
+    assert feed.written == ["> first", "> second"]
+
+
+def test_event_feed_with_no_events_writes_nothing():
+    class RecordingLog(EventFeed):
+        def __init__(self):
+            self.written: list[str] = []
+
+        def write(self, text):
+            self.written.append(text)
+
+    feed = RecordingLog()
+
+    feed.append_events([])
+
+    assert feed.written == []

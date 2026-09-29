@@ -14,17 +14,28 @@ from matchmakinglab.platform.platform import Platform
 from matchmakinglab.platform.sim_harness import SimHarness
 from matchmakinglab.ui.app import MatchmakingLabApp
 
+# A small pool makes returning ("EXISTING") players appear within ~10 ticks
+# instead of the ~50 needed to exhaust the 500-player default.
+SMALL_POOL = 12
 
-def _make_app() -> MatchmakingLabApp:
+
+def _make_app(
+    player_count: int = 500,
+    requests_per_step: int = 10,
+    seed: int | None = 1,
+) -> MatchmakingLabApp:
     harness = SimHarness(
-        gen.BradleyTerryGenerator(),
+        gen.BradleyTerryGenerator(player_count=player_count, seed=seed),
         Platform(BradleyTerry()),
+        requests_per_step=requests_per_step,
+        seed=seed,
     )
-    return MatchmakingLabApp(harness, config_summary="test", seed=1)
+    return MatchmakingLabApp(harness, config_summary="test", seed=seed)
 
 
 def test_app_mounts_and_ticks():
     """The UI mounts and the tick timer advances the simulation state."""
+
     async def scenario():
         app = _make_app()
         async with app.run_test(size=(120, 40)) as pilot:
@@ -39,6 +50,7 @@ def test_app_mounts_and_ticks():
 
 def test_reacts_to_speed_and_pause_bindings():
     """k doubles speed, j halves it, space toggles pause."""
+
     async def scenario():
         app = _make_app()
         async with app.run_test(size=(120, 40)) as pilot:
@@ -68,6 +80,7 @@ def test_reacts_to_speed_and_pause_bindings():
 
 def test_speed_is_clamped_to_bounds():
     """Speed is capped at 8x and floored at 0.25x."""
+
     async def scenario():
         app = _make_app()
         async with app.run_test(size=(120, 40)) as pilot:
@@ -94,6 +107,7 @@ def test_speed_is_clamped_to_bounds():
 
 def test_feed_receives_events():
     """The event feed gains lines as the simulation runs."""
+
     async def scenario():
         app = _make_app()
         async with app.run_test(size=(120, 40)) as pilot:
@@ -108,6 +122,7 @@ def test_feed_receives_events():
 
 def test_analytics_panel_tracks_finished_matches():
     """The analytics panel reflects finished matches from the harness."""
+
     async def scenario():
         app = _make_app()
         async with app.run_test(size=(120, 40)) as pilot:
@@ -118,3 +133,63 @@ def test_analytics_panel_tracks_finished_matches():
             return matches_shown
 
     assert asyncio.run(scenario()) > 0
+
+
+# ---------- State panel: population and queue ----------
+
+
+def test_state_panel_tracks_population_size_and_queue():
+    """Population and the waiting queue are pushed into the state panel."""
+
+    async def scenario():
+        app = _make_app(player_count=SMALL_POOL, requests_per_step=4, seed=3)
+        async with app.run_test(size=(120, 40)) as pilot:
+            # Speed up so a meaningful number of ticks land before the assertions.
+            await pilot.press("k", "k", "k")
+            await pilot.pause(1.0)
+            panel = app.state_panel
+            snapshot = (
+                panel.population_size,
+                panel.queue_size,
+                list(panel.queue),
+                len(app.harness.state.player_database),
+                [
+                    req.player.username
+                    for req in app.harness.state.get_matchmaking_queue()
+                ],
+            )
+            app.exit()
+            await pilot.pause()
+            return snapshot
+
+    population, queue_size, queue, database_size, harness_queue = asyncio.run(
+        scenario()
+    )
+
+    # Population size is mirrored from the harness and capped by the pool.
+    assert population > 0
+    assert population == database_size
+    assert population <= SMALL_POOL
+
+    # The panel's queue list stays consistent with its own size counter.
+    assert queue_size == len(queue)
+    assert queue == harness_queue
+
+
+def test_state_panel_renders_population_and_queue_rows():
+    """The rendered panel exposes the new population/queue rows."""
+
+    async def scenario():
+        app = _make_app(player_count=SMALL_POOL, requests_per_step=4, seed=3)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("k", "k", "k")
+            await pilot.pause(1.0)
+            text = app.state_panel.render()
+            app.exit()
+            await pilot.pause()
+            return text
+
+    text = asyncio.run(scenario())
+    assert "Population size" in text
+    assert "Queue size" in text
+    assert "Queue" in text
