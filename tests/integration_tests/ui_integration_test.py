@@ -135,6 +135,110 @@ def test_analytics_panel_tracks_finished_matches():
     assert asyncio.run(scenario()) > 0
 
 
+def test_quit_binding_exits_the_app():
+    """q shuts the app down cleanly."""
+
+    async def scenario():
+        app = _make_app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.2)
+            await pilot.press("q")
+            await pilot.pause(0.1)
+            return app.is_running, app.return_code
+
+    is_running, return_code = asyncio.run(scenario())
+    assert is_running is False
+    assert return_code == 0
+
+
+def test_pause_freezes_and_resume_restores_ticking():
+    """While paused the simulation is frozen; resuming picks up where it left off.
+
+    The paused reading is re-baselined after a settling pause: a tick can already
+    be in flight when the keypress is handled, so the value sampled immediately
+    before pressing space is not a safe reference point.
+    """
+
+    async def scenario():
+        app = _make_app(player_count=SMALL_POOL, requests_per_step=4, seed=3)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("k", "k", "k")
+            await pilot.pause(0.4)
+            assert app.state_panel.tick > 0
+
+            await pilot.press("space")
+            await pilot.pause(0.2)  # let the pause land
+            frozen = app.state_panel.tick
+            await pilot.pause(0.8)
+            still_frozen = app.state_panel.tick
+
+            await pilot.press("space")
+            await pilot.pause(0.2)  # let the resume land
+            resumed = app.state_panel.tick
+            await pilot.pause(0.8)
+            advanced = app.state_panel.tick
+
+            app.exit()
+            await pilot.pause()
+            return frozen, still_frozen, resumed, advanced
+
+    frozen, still_frozen, resumed, advanced = asyncio.run(scenario())
+    assert frozen > 0
+    assert still_frozen == frozen  # no ticks land while paused
+    assert advanced > resumed  # ticks resume once unpaused
+
+
+def test_status_bar_reflects_pause_and_speed_changes():
+    """The status bar mirrors the app's run state and speed."""
+
+    async def scenario():
+        app = _make_app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.2)
+            await pilot.press("k")
+            await pilot.pause(0.05)
+            running, faster = app.status.running, app.status.speed
+
+            await pilot.press("space")
+            await pilot.pause(0.05)
+            paused = app.status.running
+
+            app.exit()
+            await pilot.pause()
+            return running, faster, paused
+
+    running, faster, paused = asyncio.run(scenario())
+    assert running is True
+    assert faster == 2.0
+    assert paused is False
+
+
+def test_paused_app_ignores_a_tick_that_still_fires():
+    """`_on_tick` is a no-op while paused.
+
+    The Textual timer is paused too, but the guard is what actually stops the
+    simulation advancing, so it is exercised directly.
+    """
+
+    async def scenario():
+        app = _make_app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.3)
+            before = app.state_panel.tick
+
+            app.paused = True
+            app._on_tick()
+            app._on_tick()
+
+            app.exit()
+            await pilot.pause()
+            return before, app.state_panel.tick
+
+    before, after = asyncio.run(scenario())
+    assert before > 0
+    assert after == before
+
+
 # ---------- State panel: population and queue ----------
 
 

@@ -13,13 +13,13 @@ import pytest
 from matchmakinglab.core.models import (
     LATENCY_KEY,
     REGION_KEY,
-    Player,
     PlayerStatus,
     Region,
 )
 from matchmakinglab.matchmakers import BTCandidateGenerationMethod
 from matchmakinglab.matchmakers.base_generator import RequestGenerator
 from matchmakinglab.matchmakers.bradley_terry.generator import (
+    MAX_TRIES,
     BradleyTerryGenerator,
     _gen_existing_player_request,
     _gen_n_existing_requests,
@@ -76,9 +76,11 @@ def test_generate_requests_rejects_batch_larger_than_pool():
 def test_generate_requests_reuses_pool_players_once_exhausted():
     gen = BradleyTerryGenerator(player_count=3)
 
-    database: dict[str, Player] = {}
-    for req in gen.generate_requests(3, database):
-        database[req["user"]] = make_skill_player(0, req["user"], Region.OCEANIA)
+    requests = gen.generate_requests(3, {})
+    database = {
+        req["user"]: make_skill_player(i, req["user"], Region.OCEANIA)
+        for i, req in enumerate(requests)
+    }
 
     requests = gen.generate_requests(5, database)
 
@@ -102,6 +104,8 @@ def test_generate_requests_differs_across_seeds():
 
 
 # ---------- Mixed / existing-player generation ----------
+
+
 def _seed_database(
     gen: BradleyTerryGenerator,
     count: int,
@@ -173,7 +177,13 @@ def test_generate_requests_full_database_with_no_idle_players_returns_empty():
 
 
 def test_generate_requests_signs_up_new_players_when_existing_pool_is_busy():
-    gen = BradleyTerryGenerator(player_count=10, seed=42)
+    """With no idle player to pull back, the whole batch becomes new signups.
+
+    Seed 0 draws the existing-player branch on the first pick, so this also
+    covers the fallback loop that tops the batch up with fresh signups once the
+    pool lookup has come up empty.
+    """
+    gen = BradleyTerryGenerator(player_count=10, seed=0)
     database = _seed_database(gen, 4)
     for player in database.values():
         player.status = PlayerStatus.PLAYING
@@ -182,6 +192,9 @@ def test_generate_requests_signs_up_new_players_when_existing_pool_is_busy():
 
     assert len(requests) == 5
     assert all(req["user"] not in database for req in requests)
+    assert all(req["is_new"] for req in requests)
+    # The batch is topped up from the next available pool slots.
+    assert [req["user"] for req in requests] == [f"player_{i:04d}" for i in range(4, 9)]
 
 
 def test_generate_requests_stops_early_when_pool_runs_out_mid_fallback():
@@ -297,6 +310,7 @@ def test_gen_existing_player_request_uses_default_region():
     assert request is not None
     assert request["user"] == "player_0000"
     assert request["req_features"][REGION_KEY] == Region.ASIA
+    assert request["is_new"] is False
 
 
 def test_gen_existing_player_request_returns_none_when_no_idle_player():
@@ -308,6 +322,26 @@ def test_gen_existing_player_request_returns_none_when_no_idle_player():
     }
 
     assert _gen_existing_player_request(1, ["player_0000"], rng, database) is None
+
+
+def test_gen_existing_player_request_returns_none_for_unknown_username():
+    rng = random.Random(1)
+    database = {}
+
+    assert _gen_existing_player_request(1, ["player_0000"], rng, database) is None
+
+
+def test_gen_existing_player_request_gives_up_after_max_tries(mocker):
+    rng = random.Random(1)
+    database = {
+        "player_0000": make_skill_player(
+            0, "player_0000", Region.OCEANIA, status=PlayerStatus.QUEUING
+        )
+    }
+    pick = mocker.patch.object(rng, "randint", return_value=0)
+
+    assert _gen_existing_player_request(1, ["player_0000"], rng, database) is None
+    assert pick.call_count == MAX_TRIES
 
 
 # ---------- Distinct users per batch (self-match regression) ----------
@@ -472,3 +506,12 @@ def test_factory_passes_config_to_strategy():
     strategy = platform.strategy
     assert isinstance(strategy, BradleyTerry)
     assert strategy._candidate_generation_method == BTCandidateGenerationMethod.NAIVE
+
+
+def test_factory_treats_empty_config_as_defaults():
+    platform = BradleyTerryFactory({}).create_platform()
+
+    strategy = platform.strategy
+    assert isinstance(strategy, BradleyTerry)
+    assert strategy._candidate_generation_method == BTCandidateGenerationMethod.NAIVE
+    assert strategy._optimisation_method.name == "GREEDY"

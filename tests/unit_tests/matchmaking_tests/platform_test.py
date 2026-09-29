@@ -35,7 +35,7 @@ def _make_platform() -> tuple[Platform, PlatformState]:
 
 def test_state_add_and_get_player():
     state = PlatformState()
-    player = make_player(0, "alice", Region.OCEANIA)
+    player = make_player(0, "alice")
 
     assert state.add_player(player) is player
     assert state.get_player("alice") is player
@@ -44,14 +44,12 @@ def test_state_add_and_get_player():
 
 def test_state_queue_access_is_live():
     state = PlatformState()
-    req = MatchRequest(make_player(0, "alice", Region.OCEANIA))
+    req = MatchRequest(make_player(0, "alice"))
 
     state.enqueue_match_req(req)
     assert state.get_matchmaking_queue() == [req]
 
-    state.get_matchmaking_queue().append(
-        MatchRequest(make_player(1, "bob", Region.OCEANIA))
-    )
+    state.get_matchmaking_queue().append(MatchRequest(make_player(1, "bob")))
     assert len(state.get_matchmaking_queue()) == 2
 
 
@@ -135,6 +133,18 @@ def test_add_to_matchmaking_queue_sets_status_queuing():
     assert player.status == PlayerStatus.QUEUING
 
 
+def test_new_player_starts_with_empty_win_loss_record():
+    """A freshly signed-up player has no recorded wins or losses."""
+    platform, state = _make_platform()
+
+    platform.add_to_matchmaking_queue("alice", _req_features(), state)
+
+    player = state.get_player("alice")
+    assert player is not None
+    assert player.wins == 0
+    assert player.loses == 0
+
+
 def test_new_player_default_region_comes_from_request_features():
     platform, state = _make_platform()
 
@@ -187,8 +197,8 @@ def test_match_players_leaves_unmatched_requests_queued():
 def test_start_matches_converts_proposals_to_active_matches():
     platform, _ = _make_platform()
 
-    alice = make_player(0, "alice", Region.OCEANIA)
-    bob = make_player(1, "bob", Region.OCEANIA)
+    alice = make_player(0, "alice")
+    bob = make_player(1, "bob")
     proposal = MatchProposal(
         match_cost=5,
         team_A=[MatchRequest(alice, {})],
@@ -209,8 +219,8 @@ def test_start_matches_converts_proposals_to_active_matches():
 
 def test_end_matches_sets_players_idle_and_appends_finished():
     platform, _ = _make_platform()
-    alice = make_player(0, "alice", Region.OCEANIA, status=PlayerStatus.PLAYING)
-    bob = make_player(1, "bob", Region.OCEANIA, status=PlayerStatus.PLAYING)
+    alice = make_player(0, "alice", status=PlayerStatus.PLAYING)
+    bob = make_player(1, "bob", status=PlayerStatus.PLAYING)
     finished = FinishedMatch(match_length=7, winning_team=[alice], losing_team=[bob])
     global_finished: list[FinishedMatch] = []
 
@@ -219,6 +229,66 @@ def test_end_matches_sets_players_idle_and_appends_finished():
     assert alice.status == PlayerStatus.IDLE
     assert bob.status == PlayerStatus.IDLE
     assert global_finished == [finished]
+
+
+def test_end_matches_records_a_win_for_the_winning_team():
+    platform, _ = _make_platform()
+    alice = make_player(0, "alice", status=PlayerStatus.PLAYING)
+    bob = make_player(1, "bob", status=PlayerStatus.PLAYING)
+    finished = FinishedMatch(match_length=7, winning_team=[alice], losing_team=[bob])
+
+    platform.end_matches([finished], [])
+
+    assert alice.wins == 1
+    assert alice.loses == 0
+    assert bob.wins == 0
+    assert bob.loses == 1
+
+
+def test_end_matches_records_one_result_per_player_in_multi_player_teams():
+    platform, _ = _make_platform()
+    winners = [make_player(i, f"w{i}", status=PlayerStatus.PLAYING) for i in range(3)]
+    losers = [
+        make_player(3 + i, f"l{i}", status=PlayerStatus.PLAYING) for i in range(2)
+    ]
+    finished = FinishedMatch(match_length=7, winning_team=winners, losing_team=losers)
+
+    platform.end_matches([finished], [])
+
+    assert all(p.wins == 1 and p.loses == 0 for p in winners)
+    assert all(p.wins == 0 and p.loses == 1 for p in losers)
+    assert all(p.status == PlayerStatus.IDLE for p in winners + losers)
+
+
+def test_end_matches_accumulates_records_across_repeated_matches():
+    platform, _ = _make_platform()
+    alice = make_player(0, "alice", status=PlayerStatus.PLAYING)
+    bob = make_player(1, "bob", status=PlayerStatus.PLAYING)
+
+    platform.end_matches(
+        [FinishedMatch(5, winning_team=[alice], losing_team=[bob])], []
+    )
+    platform.end_matches(
+        [FinishedMatch(5, winning_team=[alice], losing_team=[bob])], []
+    )
+    platform.end_matches(
+        [FinishedMatch(5, winning_team=[bob], losing_team=[alice])], []
+    )
+
+    assert (alice.wins, alice.loses) == (2, 1)
+    assert (bob.wins, bob.loses) == (1, 2)
+
+
+def test_end_matches_with_no_finished_matches_is_a_no_op():
+    platform, _ = _make_platform()
+    alice = make_player(0, "alice", status=PlayerStatus.PLAYING)
+    global_finished: list[FinishedMatch] = []
+
+    platform.end_matches([], global_finished)
+
+    assert global_finished == []
+    assert (alice.wins, alice.loses) == (0, 0)
+    assert alice.status == PlayerStatus.PLAYING  # still in progress
 
 
 def test_full_player_state_cycle_via_simulator():
@@ -248,6 +318,9 @@ def test_full_player_state_cycle_via_simulator():
 
     assert all(p.status == PlayerStatus.IDLE for p in players)
     assert global_finished == finished
+    # Each finished match credits one win and one loss across its two teams.
+    assert sum(p.wins for p in players) == len(finished)
+    assert sum(p.loses for p in players) == len(finished)
 
 
 def test_update_player_features_delegates_to_strategy(mocker):
@@ -262,7 +335,7 @@ def test_update_player_features_delegates_to_strategy(mocker):
 
 def test_increment_wait_time():
     platform, _ = _make_platform()
-    req = MatchRequest(make_player(0, "alice", Region.OCEANIA))
+    req = MatchRequest(make_player(0, "alice"))
 
     platform.increment_wait_time([req])
 
@@ -301,9 +374,23 @@ def test_simulate_matches_completes_long_enough_matches(mocker):
     assert finished[0].match_length == 7  # clock advanced to 7 before completion
 
 
+def test_simulate_matches_only_removes_finished_matches(mocker):
+    simulator = Simulator()
+    # randint is consumed once per active match: 1st finishes, 2nd does not.
+    mocker.patch.object(simulator._rng, "randint", side_effect=[5, 60])
+    finished_match = ActiveMatch(match_cost=1, tick_match_length=5)
+    running_match = ActiveMatch(match_cost=2, tick_match_length=5)
+    active = [finished_match, running_match]
+
+    finished = simulator.simulate_matches(active)
+
+    assert finished == [FinishedMatch(6, [], [])]
+    assert active == [running_match]
+
+
 def test_simulate_match_preserves_teams():
-    alice = make_player(0, "alice", Region.OCEANIA)
-    bob = make_player(1, "bob", Region.OCEANIA)
+    alice = make_player(0, "alice")
+    bob = make_player(1, "bob")
     match = ActiveMatch(match_cost=1, team_A=[alice], team_B=[bob], tick_match_length=9)
 
     finished = _simulate_match(match)

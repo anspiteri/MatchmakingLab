@@ -16,7 +16,6 @@ from matchmakinglab.core.models import (
 )
 from matchmakinglab.matchmakers.bradley_terry.strategy import (
     BASE_SKILL_RATING,
-    SKILL_RATING_KEY,
     MatchFeatures,
     _bt_probability,
     _competitiveness_score,
@@ -27,7 +26,7 @@ from matchmakinglab.matchmakers.bradley_terry.strategy import (
     _queue_time_benefit,
     _region_difference,
 )
-from tests.helpers import make_player, make_skill_player
+from tests.helpers import make_skill_player
 
 # ---------- Composition Correctness -------------
 
@@ -36,7 +35,10 @@ def test_model_match_composition(mocker):
     player_a = make_skill_player(0, "test_user_a", Region.OCEANIA, BASE_SKILL_RATING)
 
     player_b = make_skill_player(
-        1, "test_user_b", Region.ASIA, BASE_SKILL_RATING + int(BASE_SKILL_RATING / 2)
+        1,
+        "test_user_b",
+        Region.ASIA,
+        BASE_SKILL_RATING + int(BASE_SKILL_RATING / 2),
     )
 
     request_a = MatchRequest(
@@ -237,11 +239,7 @@ def test_extract_match_features(
     queue_time,
     expected,
 ):
-    player_features = {
-        SKILL_RATING_KEY: skill_rating,
-    }
-
-    player = make_player(0, "test_user", region, player_features)
+    player = make_skill_player(0, "test_user", region, skill_rating)
 
     request_features = {
         LATENCY_KEY: latency,
@@ -297,7 +295,9 @@ def test_extract_match_features_invalid_latency(latency):
     [None, Region.UNDEFINED],
 )
 def test_extract_match_features_invalid_region(region):
-    player = make_skill_player(0, "test_user", Region.OCEANIA, SKILL_RATING_KEY)
+    # A valid skill is used deliberately: an invalid one would trip the earlier
+    # skill check and mask the region validation this test is meant to cover.
+    player = make_skill_player(0, "test_user", Region.OCEANIA, BASE_SKILL_RATING)
 
     request = MatchRequest(
         player,
@@ -307,7 +307,7 @@ def test_extract_match_features_invalid_region(region):
         },
     )
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Region is missing"):
         _extract_match_features(request)
 
 

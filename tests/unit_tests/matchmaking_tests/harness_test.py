@@ -414,12 +414,33 @@ def test_returning_players_are_never_new_signups():
     assert known  # the run really did produce returning players
 
 
-# ---------- Self-match regression ----------
-# A batch used to be able to name the same player twice, and BT's greedy matcher
-# then treated the resulting "A vs A" candidate as a legitimate pair: one match
-# credited the player with both a win and a loss and applied a net-zero rating
-# adjustment. Fixed in the generator (distinct users per batch) and in the
-# matcher (self-pairs are not candidates); these tests hold both layers in place.
+# ---------- Win / loss bookkeeping ----------
+
+
+def test_wins_and_losses_balance_against_finished_matches():
+    harness = _make_harness(requests_per_step=10, seed=4)
+
+    snapshot = _run(harness, 120)
+
+    assert snapshot.finished_matches > 0
+    players = list(harness.state.player_database.values())
+    # Every finished match is 1v1, so wins and losses must tally one-for-one.
+    assert sum(p.wins for p in players) == snapshot.finished_matches
+    assert sum(p.loses for p in players) == snapshot.finished_matches
+
+
+def test_played_players_are_retained_and_requeued_rather_than_retired():
+    """Finishing a match returns a player to the pool instead of retiring them."""
+    harness = _make_harness(requests_per_step=10, seed=4, player_count=SMALL_POOL)
+
+    _run(harness, 120)
+
+    players = list(harness.state.player_database.values())
+    played = [p for p in players if p.wins or p.loses]
+    assert played
+    # Every player that has played is still in the database and usable.
+    assert {p.username for p in played} <= set(harness.state.player_database)
+    assert all(p.status in set(PlayerStatus) for p in played)
 
 
 # ---------- Self-match regression ----------

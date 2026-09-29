@@ -17,6 +17,7 @@ from matchmakinglab.core.models import (
     ActiveMatch,
     FinishedMatch,
     MatchRequest,
+    PlayerStatus,
     Region,
 )
 from matchmakinglab.matchmakers.bradley_terry.strategy import (
@@ -92,6 +93,24 @@ def test_update_player_features(
 
     assert winner.player_features[SKILL_RATING_KEY] == expected_winner_after
     assert loser.player_features[SKILL_RATING_KEY] == expected_loser_after
+
+
+def test_update_player_features_does_not_touch_win_loss_record():
+    """Rating updates are independent of the win/loss bookkeeping."""
+    bt_instance = BradleyTerry()
+
+    winner = make_skill_player(
+        0, "winner", Region.OCEANIA, 100, PlayerStatus.IDLE, wins=3, loses=1
+    )
+    loser = make_skill_player(
+        1, "loser", Region.OCEANIA, 100, PlayerStatus.IDLE, wins=2, loses=5
+    )
+
+    match = FinishedMatch(match_length=0, winning_team=[winner], losing_team=[loser])
+    bt_instance.update_player_features(match)
+
+    assert (winner.wins, winner.loses) == (3, 1)
+    assert (loser.wins, loser.loses) == (2, 5)
 
 
 def test_update_player_features_asserts_on_empty_teams():
@@ -195,6 +214,16 @@ def test_run_algorithm_composition(
             expected_models,
             bt_instance._optimisation_method,
         )
+
+
+def test_run_algorithm_returns_empty_queue_untouched():
+    """An empty queue short-circuits before candidate generation."""
+    bt_instance = BradleyTerry()
+
+    matches, remaining = bt_instance.run_algorithm([])
+
+    assert matches == []
+    assert remaining == []
 
 
 def test_run_algorithm_raises_for_undefined_candidate_generation_method():
