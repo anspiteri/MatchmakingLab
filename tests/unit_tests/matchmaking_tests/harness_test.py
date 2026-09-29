@@ -7,16 +7,26 @@ layer. These run headless (no Textual involved), holding the sim loop correct
 and independent of the TUI.
 """
 
+import re
 from itertools import pairwise
 
+from matchmakinglab.core.models import (
+    LATENCY_KEY,
+    REGION_KEY,
+    PlayerStatus,
+    Region,
+)
 from matchmakinglab.core.snapshot import SimSnapshot
 from matchmakinglab.matchmakers.base_generator import RequestGenerator
 from matchmakinglab.matchmakers.bradley_terry import generator as gen
 from matchmakinglab.matchmakers.bradley_terry.strategy import (
+    BASE_SKILL_RATING,
+    SKILL_RATING_KEY,
     BradleyTerry,
 )
 from matchmakinglab.platform.platform import Platform
 from matchmakinglab.platform.sim_harness import SimHarness
+from tests.helpers import make_skill_player
 
 # A small pool keeps EXISTING (returning-player) requests arriving promptly;
 # the default 500-player pool would need ~50 ticks before a single one appears.
@@ -114,6 +124,21 @@ def test_odd_request_rate_leaves_players_waiting():
     assert snapshot.avg_wait > 0
 
 
+def test_events_track_the_full_match_lifecycle():
+    harness = _make_harness(requests_per_step=10, player_count=SMALL_POOL)
+
+    event_lines = set()
+    for _ in range(120):
+        snapshot = harness.step()
+        event_lines.update(snapshot.event_lines)
+
+    assert any("generated NEW" in line for line in event_lines)
+    assert any("generated EXISTING" in line for line in event_lines)
+    assert any("matched" in line and "↔" in line for line in event_lines)
+    assert any("match finished" in line for line in event_lines)
+    assert "ratings updated" in event_lines
+
+
 def test_same_seed_produces_identical_queue():
     def run(seed):
         harness = _make_harness(seed=seed)
@@ -151,6 +176,50 @@ def test_sim_seconds_and_request_rate_track_fake_clock():
 
     assert snapshot.sim_seconds == 1.0
     assert snapshot.request_rate == 20.0
+
+
+def test_ratings_updated_once_per_finished_match():
+    """Each finished match applies rating updates exactly once, on completion."""
+
+    class RecordingBradleyTerry(BradleyTerry):
+        def __init__(self):
+            super().__init__()
+            self.updated_matches = []
+
+        def update_player_features(self, finished_match):
+            self.updated_matches.append(finished_match)
+            super().update_player_features(finished_match)
+
+    strategy = RecordingBradleyTerry()
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(),
+        Platform(strategy),
+        requests_per_step=10,
+    )
+
+    for _ in range(120):
+        harness.step()
+
+    finished = harness.state.get_finished_matches()
+    assert len(finished) > 0
+    assert len(strategy.updated_matches) == len(finished)
+
+
+def test_ratings_updated_event_emitted_once_per_tick_with_finishes():
+    """The summary line appears only on ticks that actually finished a match."""
+    harness = _make_harness(requests_per_step=10)
+
+    for _ in range(80):
+        snapshot = harness.step()
+
+        if "ratings updated" in snapshot.event_lines:
+            # Ratings are applied after the finish lines, never before.
+            lines = snapshot.event_lines
+            assert lines[-1] == "ratings updated"
+            assert any("match finished" in line for line in lines)
+        else:
+            # No finishes means no rating work to report.
+            assert not any("match finished" in line for line in snapshot.event_lines)
 
 
 # ---------- Population / queue reporting ----------
@@ -204,6 +273,145 @@ def test_snapshot_queue_empties_once_players_are_fully_matched():
     snapshot = harness.step()
 
     assert snapshot.queue == []
+
+
+# ---------- Request generation event lines ----------
+
+
+def test_new_player_event_reports_base_skill_ping_and_region():
+    requests = [
+        {
+            "user": "newbie",
+            "req_features": {LATENCY_KEY: 42, REGION_KEY: Region.EU},
+            "is_new": True,
+        }
+    ]
+    harness = SimHarness(
+        _ScriptedGenerator([requests]),
+        Platform(BradleyTerry()),
+        requests_per_step=1,
+    )
+
+    snapshot = harness.step()
+
+    assert snapshot.event_lines[0] == (
+        f"generated NEW newbie - skill {BASE_SKILL_RATING}, ping: 42, region: europe"
+    )
+
+
+def test_existing_player_event_reports_that_players_own_skill():
+    player = make_skill_player(
+        0, "veteran", Region.ASIA, skill_rating=137, status=PlayerStatus.IDLE
+    )
+    harness = SimHarness(
+        _ScriptedGenerator(),
+        Platform(BradleyTerry()),
+        requests_per_step=1,
+    )
+    harness.state.add_player(player)
+    harness.generator.batches.append(
+        [
+            {
+                "user": "veteran",
+                "req_features": {
+                    LATENCY_KEY: 7,
+                    REGION_KEY: Region.ASIA,
+                    SKILL_RATING_KEY: 137,
+                },
+                "is_new": False,
+            }
+        ]
+    )
+
+    snapshot = harness.step()
+
+    assert snapshot.event_lines[0] == (
+        "generated EXISTING veteran - skill 137, ping: 7, region: asia"
+    )
+    # The returning player keeps their rating; it is not reset on re-entry.
+    assert player.player_features[SKILL_RATING_KEY] == 137
+
+
+def test_one_generation_event_per_request_and_no_separate_queued_event():
+    requests = [
+        {
+            "user": f"newbie_{i}",
+            "req_features": {LATENCY_KEY: 10 + i, REGION_KEY: Region.NA},
+            "is_new": True,
+        }
+        for i in range(4)
+    ]
+    harness = SimHarness(
+        _ScriptedGenerator([requests]),
+        Platform(BradleyTerry()),
+        requests_per_step=4,
+    )
+
+    snapshot = harness.step()
+
+    generated = [line for line in snapshot.event_lines if line.startswith("generated ")]
+    assert len(generated) == len(requests)
+    assert not any("queued" in line for line in snapshot.event_lines)
+
+
+def test_reported_skill_matches_the_skill_in_the_emitted_request():
+    """Each EXISTING event reports the rating carried by that request."""
+
+    class RecordingGenerator(RequestGenerator):
+        """Wraps the real generator, remembering the batch it last emitted."""
+
+        def __init__(self, inner: RequestGenerator) -> None:
+            self.inner = inner
+            self.last_batch: list[dict] = []
+
+        def generate_requests(self, number, player_database) -> list:
+            self.last_batch = self.inner.generate_requests(number, player_database)
+            return self.last_batch
+
+    generator = RecordingGenerator(
+        gen.BradleyTerryGenerator(player_count=SMALL_POOL, seed=3)
+    )
+    harness = SimHarness(
+        generator, Platform(BradleyTerry()), requests_per_step=4, seed=3
+    )
+    pattern = re.compile(r"^generated EXISTING (\S+) - skill (\d+), ")
+
+    checked = 0
+    for _ in range(30):
+        snapshot = harness.step()
+        # Read the batch back *after* the step: the events were formatted from it.
+        emitted = {
+            req["user"]: req["req_features"].get(SKILL_RATING_KEY)
+            for req in generator.last_batch
+            if not req["is_new"]
+        }
+        for line in snapshot.event_lines:
+            match = pattern.match(line)
+            if match:
+                username, skill = match.group(1), int(match.group(2))
+                assert emitted[username] == skill
+                checked += 1
+
+    assert checked  # the run really did produce returning players
+
+
+def test_returning_players_are_never_new_signups():
+    """A player pulled back from the database is not re-registered as a signup."""
+    harness = _make_harness(requests_per_step=4, seed=3, player_count=SMALL_POOL)
+
+    known = set()
+    pattern = re.compile(r"^generated (\w+) (\S+) - ")
+    for _ in range(30):
+        for line in harness.step().event_lines:
+            match = pattern.match(line)
+            if match:
+                kind, username = match.groups()
+                if kind == "NEW":
+                    assert username not in known  # a signup must be genuinely new
+                else:
+                    known.add(username)
+
+    assert known  # the run really did produce returning players
 
 
 # ---------- Self-match regression ----------

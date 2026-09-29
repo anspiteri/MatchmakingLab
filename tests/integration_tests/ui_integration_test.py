@@ -193,3 +193,52 @@ def test_state_panel_renders_population_and_queue_rows():
     assert "Population size" in text
     assert "Queue size" in text
     assert "Queue" in text
+
+
+# ---------- Event feed: NEW vs EXISTING ----------
+
+
+def test_feed_distinguishes_new_and_existing_requests():
+    """The feed labels brand new signups differently from returning players."""
+
+    async def scenario():
+        app = _make_app(player_count=SMALL_POOL, requests_per_step=4, seed=3)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("k", "k", "k")
+            await pilot.pause(1.0)
+            feed_text = [line.text for line in app.feed.lines]
+            app.exit()
+            await pilot.pause()
+            return feed_text
+
+    feed_text = asyncio.run(scenario())
+
+    assert any("generated NEW" in line for line in feed_text)
+    assert any("generated EXISTING" in line for line in feed_text)
+    # The superseded "queued player" line must not come back.
+    assert not any("queued player" in line for line in feed_text)
+
+
+def test_feed_lines_carry_player_detail():
+    """Generation lines surface skill, ping and region for each request."""
+
+    async def scenario():
+        app = _make_app(player_count=SMALL_POOL, requests_per_step=4, seed=3)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("k", "k", "k")
+            await pilot.pause(0.6)
+            feed_text = [line.text for line in app.feed.lines]
+            app.exit()
+            await pilot.pause()
+            return feed_text
+
+    generation_lines = [
+        line for line in asyncio.run(scenario()) if "generated " in line
+    ]
+
+    assert generation_lines
+    # Every generation line reports a skill, a ping and a region.
+    for line in generation_lines:
+        assert "skill " in line
+        assert "ping: " in line
+        assert "region: " in line
