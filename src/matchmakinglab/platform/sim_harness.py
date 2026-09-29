@@ -134,8 +134,9 @@ class SimHarness:
         self._tick += 1
 
         return SimSnapshot(
+            population_size=len(self.state.player_database),
             tick=self._tick,
-            queued=len(self.state.get_matchmaking_queue()),
+            queue=[r.player.username for r in self.state.get_matchmaking_queue()],
             active_matches=len(self.state.get_active_games()),
             finished_matches=len(self.state.get_finished_matches()),
             sim_seconds=self._sim_seconds,

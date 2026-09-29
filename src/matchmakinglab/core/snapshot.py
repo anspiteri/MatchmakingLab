@@ -10,8 +10,9 @@ class SimSnapshot:
     the UI never needs to reach into Platform/Simulator internals directly.
     """
 
+    population_size: int = 0
     tick: int = 0
-    queued: int = 0
+    queue: list[str] = field(default_factory=list)
     active_matches: int = 0
     finished_matches: int = 0
     sim_seconds: float = 0.0

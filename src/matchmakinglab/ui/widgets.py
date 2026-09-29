@@ -31,17 +31,21 @@ class _KeyValuePanel(Widget):
 class StatePanel(_KeyValuePanel):
     """Platform / State counters."""
 
-    queued = reactive(0)
+    population_size = reactive(0)
     active = reactive(0)
     tick = reactive(0)
     sim_seconds = reactive(0.0)
+    queue_size = reactive(0)
+    queue = reactive(list)
 
     def _rows(self) -> list[tuple[str, str]]:
         return [
-            ("Queue", f"{self.queued}"),
+            ("Population size", f"{self.population_size}"),
             ("Active matches", f"{self.active}"),
             ("Tick", f"{self.tick:,}"),
             ("Sim time", f"{self.sim_seconds:0.1f}s"),
+            ("Queue size", f"{self.queue_size}"),
+            ("Queue", f"{self.queue}"),
         ]
 
 
