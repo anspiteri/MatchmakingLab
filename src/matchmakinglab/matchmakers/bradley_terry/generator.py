@@ -9,6 +9,7 @@ from matchmakinglab.core.models import (
     Region,
 )
 from matchmakinglab.matchmakers.base_generator import RequestGenerator
+from matchmakinglab.matchmakers.bradley_terry.strategy import SKILL_RATING_KEY
 
 
 class GenerationType(Enum):
@@ -127,6 +128,7 @@ def _gen_new_player_request(index, pool, rng):
             LATENCY_KEY: rng.randint(5, 120),
             REGION_KEY: rng.choice(_ACTIVE_REGIONS),
         },
+        "is_new": True,
     }
 
 
@@ -148,7 +150,9 @@ def _gen_existing_player_request(index, pool, rng, database) -> dict | None:
             "req_features": {
                 LATENCY_KEY: rng.randint(5, 120),
                 REGION_KEY: player.default_region,
+                SKILL_RATING_KEY: player.player_features[SKILL_RATING_KEY],
             },
+            "is_new": False,
         }
 
 

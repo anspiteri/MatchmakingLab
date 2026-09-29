@@ -1,9 +1,17 @@
 from collections.abc import Callable
 
-from matchmakinglab.core.models import Player
+from matchmakinglab.core.models import (
+    LATENCY_KEY,
+    REGION_KEY,
+    Player,
+)
 from matchmakinglab.core.snapshot import SimSnapshot
 from matchmakinglab.core.state import PlatformState
 from matchmakinglab.matchmakers.base_generator import RequestGenerator
+from matchmakinglab.matchmakers.bradley_terry.strategy import (
+    BASE_SKILL_RATING,
+    SKILL_RATING_KEY,
+)
 from matchmakinglab.platform.platform import Platform
 from matchmakinglab.platform.simulator import Simulator
 
@@ -63,11 +71,22 @@ class SimHarness:
 
         for req in new_requests:
             user = req["user"]
-            events.append(f"generated player {user}")
+            ping = req["req_features"][LATENCY_KEY]
+            region = req["req_features"][REGION_KEY]
+
+            if req["is_new"]:
+                events.append(
+                    f"generated NEW {user} - skill {BASE_SKILL_RATING}, ping: {ping}, region: {region}"
+                )
+            else:
+                skill = req["req_features"][SKILL_RATING_KEY]
+                events.append(
+                    f"generated EXISTING {user} - skill {skill}, ping: {ping}, region: {region}"
+                )
+
             self.platform.add_to_matchmaking_queue(
                 user, req["req_features"], self.state
             )
-            events.append(f"queued player {user}")
 
         active_before = len(self.state.get_active_games())
 
@@ -111,12 +130,12 @@ class SimHarness:
                 f"match finished: {_fmt_team(match.winning_team)} "
                 f"vs {_fmt_team(match.losing_team)}"
             )
-        if newly_finished:
-            events.append("ratings updated")
-
         self.platform.end_matches(newly_finished, self.state.get_finished_matches())
 
         self.platform.update_player_features(newly_finished, self.platform.strategy)
+
+        if newly_finished:
+            events.append("ratings updated")
 
         # GET STATISTICS
         finished = self.state.get_finished_matches()
