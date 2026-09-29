@@ -29,6 +29,7 @@ from matchmakinglab.matchmakers.factory import (
     MatchmakerFactory,
 )
 from matchmakinglab.platform.platform import Platform
+from tests.helpers import make_player
 
 # ---------- BradleyTerryGenerator ----------
 
@@ -72,7 +73,7 @@ def test_generate_requests_reuses_pool_players_once_exhausted():
 
     database: dict[str, Player] = {}
     for req in gen.generate_requests(3, database):
-        database[req["user"]] = Player(0, req["user"], Region.OCEANIA)
+        database[req["user"]] = make_player(0, req["user"], Region.OCEANIA)
 
     requests = gen.generate_requests(5, database)
 
@@ -103,7 +104,7 @@ def _seed_database(
 ) -> dict[str, Player]:
     database: dict[str, Player] = {}
     for req in gen.generate_requests(count, {}):
-        database[req["user"]] = Player(len(database), req["user"], region)
+        database[req["user"]] = make_player(len(database), req["user"], region)
     return database
 
 
@@ -136,8 +137,8 @@ def test_generate_requests_with_partial_database_is_seeded_reproducibly():
 def test_existing_requests_use_player_default_region():
     gen = BradleyTerryGenerator(player_count=2, seed=1)
     database = {
-        "player_0000": Player(0, "player_0000", Region.ASIA),
-        "player_0001": Player(1, "player_0001", Region.EU),
+        "player_0000": make_player(0, "player_0000", Region.ASIA),
+        "player_0001": make_player(1, "player_0001", Region.EU),
     }
     gen.generate_requests(2, {})  # exhaust the new-player pool -> CASE TWO
     requests = gen.generate_requests(4, database)
@@ -151,10 +152,10 @@ def test_existing_requests_use_player_default_region():
 def test_generate_requests_full_database_with_no_idle_players_returns_empty():
     gen = BradleyTerryGenerator(player_count=2, seed=1)
     database = {
-        "player_0000": Player(
+        "player_0000": make_player(
             0, "player_0000", Region.OCEANIA, status=PlayerStatus.PLAYING
         ),
-        "player_0001": Player(
+        "player_0001": make_player(
             1, "player_0001", Region.OCEANIA, status=PlayerStatus.PLAYING
         ),
     }
@@ -180,7 +181,7 @@ def test_generate_requests_signs_up_new_players_when_existing_pool_is_busy():
 
 def test_gen_existing_player_request_uses_default_region():
     rng = random.Random(1)
-    database = {"player_0000": Player(0, "player_0000", Region.ASIA)}
+    database = {"player_0000": make_player(0, "player_0000", Region.ASIA)}
 
     request = _gen_existing_player_request(1, ["player_0000"], rng, database)
 
@@ -192,7 +193,7 @@ def test_gen_existing_player_request_uses_default_region():
 def test_gen_existing_player_request_returns_none_when_no_idle_player():
     rng = random.Random(1)
     database = {
-        "player_0000": Player(
+        "player_0000": make_player(
             0, "player_0000", Region.OCEANIA, status=PlayerStatus.PLAYING
         )
     }

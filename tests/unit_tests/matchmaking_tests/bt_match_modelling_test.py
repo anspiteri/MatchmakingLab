@@ -12,7 +12,6 @@ from matchmakinglab.core.models import (
     LATENCY_KEY,
     REGION_KEY,
     MatchRequest,
-    Player,
     Region,
 )
 from matchmakinglab.matchmakers.bradley_terry.strategy import (
@@ -28,23 +27,16 @@ from matchmakinglab.matchmakers.bradley_terry.strategy import (
     _queue_time_benefit,
     _region_difference,
 )
+from tests.helpers import make_player, make_skill_player
 
 # ---------- Composition Correctness -------------
 
 
 def test_model_match_composition(mocker):
-    player_a = Player(
-        0,
-        "test_user_a",
-        Region.OCEANIA,
-        {SKILL_RATING_KEY: BASE_SKILL_RATING},
-    )
+    player_a = make_skill_player(0, "test_user_a", Region.OCEANIA, BASE_SKILL_RATING)
 
-    player_b = Player(
-        1,
-        "test_user_b",
-        Region.ASIA,
-        {SKILL_RATING_KEY: BASE_SKILL_RATING + int(BASE_SKILL_RATING / 2)},
+    player_b = make_skill_player(
+        1, "test_user_b", Region.ASIA, BASE_SKILL_RATING + int(BASE_SKILL_RATING / 2)
     )
 
     request_a = MatchRequest(
@@ -177,19 +169,9 @@ def test_model_match(
     queue_time_a,
     queue_time_b,
 ):
-    player_a = Player(
-        0,
-        "test_user_a",
-        region_a,
-        {SKILL_RATING_KEY: skill_rating_a},
-    )
+    player_a = make_skill_player(0, "test_user_a", region_a, skill_rating_a)
 
-    player_b = Player(
-        1,
-        "test_user_b",
-        region_b,
-        {SKILL_RATING_KEY: skill_rating_b},
-    )
+    player_b = make_skill_player(1, "test_user_b", region_b, skill_rating_b)
 
     request_a = MatchRequest(
         player_a,
@@ -259,12 +241,7 @@ def test_extract_match_features(
         SKILL_RATING_KEY: skill_rating,
     }
 
-    player = Player(
-        0,
-        "test_user",
-        region,
-        player_features,
-    )
+    player = make_player(0, "test_user", region, player_features)
 
     request_features = {
         LATENCY_KEY: latency,
@@ -282,12 +259,7 @@ def test_extract_match_features(
     [None, -1, 1.0],
 )
 def test_extract_match_features_invalid_skill(skill_rating):
-    player = Player(
-        0,
-        "test_user",
-        Region.OCEANIA,
-        {SKILL_RATING_KEY: skill_rating},
-    )
+    player = make_skill_player(0, "test_user", Region.OCEANIA, skill_rating)
 
     request = MatchRequest(
         player,
@@ -306,12 +278,7 @@ def test_extract_match_features_invalid_skill(skill_rating):
     [-1, -100, 1.5, -99.1],
 )
 def test_extract_match_features_invalid_latency(latency):
-    player = Player(
-        0,
-        "test_user",
-        Region.OCEANIA,
-        {SKILL_RATING_KEY: BASE_SKILL_RATING},
-    )
+    player = make_skill_player(0, "test_user", Region.OCEANIA, BASE_SKILL_RATING)
 
     request = MatchRequest(
         player,
@@ -330,12 +297,7 @@ def test_extract_match_features_invalid_latency(latency):
     [None, Region.UNDEFINED],
 )
 def test_extract_match_features_invalid_region(region):
-    player = Player(
-        0,
-        "test_user",
-        Region.OCEANIA,
-        {SKILL_RATING_KEY: SKILL_RATING_KEY},
-    )
+    player = make_skill_player(0, "test_user", Region.OCEANIA, SKILL_RATING_KEY)
 
     request = MatchRequest(
         player,

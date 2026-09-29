@@ -7,13 +7,11 @@ orchestration layer and the Simulator's match clock. These run headless and
 exercise the layers below the SimHarness boundary directly.
 """
 
-
 from matchmakinglab.core.models import (
     ActiveMatch,
     FinishedMatch,
     MatchProposal,
     MatchRequest,
-    Player,
     PlayerStatus,
     Region,
 )
@@ -21,6 +19,7 @@ from matchmakinglab.core.state import PlatformState
 from matchmakinglab.matchmakers.bradley_terry.strategy import BradleyTerry
 from matchmakinglab.platform.platform import Platform
 from matchmakinglab.platform.simulator import Simulator, _simulate_match
+from tests.helpers import make_player
 
 
 def _req_features() -> dict:
@@ -36,7 +35,7 @@ def _make_platform() -> tuple[Platform, PlatformState]:
 
 def test_state_add_and_get_player():
     state = PlatformState()
-    player = Player(0, "alice", Region.OCEANIA)
+    player = make_player(0, "alice", Region.OCEANIA)
 
     assert state.add_player(player) is player
     assert state.get_player("alice") is player
@@ -45,12 +44,14 @@ def test_state_add_and_get_player():
 
 def test_state_queue_access_is_live():
     state = PlatformState()
-    req = MatchRequest(Player(0, "alice", Region.OCEANIA))
+    req = MatchRequest(make_player(0, "alice", Region.OCEANIA))
 
     state.enqueue_match_req(req)
     assert state.get_matchmaking_queue() == [req]
 
-    state.get_matchmaking_queue().append(MatchRequest(Player(1, "bob", Region.OCEANIA)))
+    state.get_matchmaking_queue().append(
+        MatchRequest(make_player(1, "bob", Region.OCEANIA))
+    )
     assert len(state.get_matchmaking_queue()) == 2
 
 
@@ -137,7 +138,9 @@ def test_add_to_matchmaking_queue_sets_status_queuing():
 def test_new_player_default_region_comes_from_request_features():
     platform, state = _make_platform()
 
-    platform.add_to_matchmaking_queue("alice", {"latency": 25, "region": Region.EU}, state)
+    platform.add_to_matchmaking_queue(
+        "alice", {"latency": 25, "region": Region.EU}, state
+    )
 
     player = state.get_player("alice")
     assert player is not None
@@ -184,8 +187,8 @@ def test_match_players_leaves_unmatched_requests_queued():
 def test_start_matches_converts_proposals_to_active_matches():
     platform, _ = _make_platform()
 
-    alice = Player(0, "alice", Region.OCEANIA)
-    bob = Player(1, "bob", Region.OCEANIA)
+    alice = make_player(0, "alice", Region.OCEANIA)
+    bob = make_player(1, "bob", Region.OCEANIA)
     proposal = MatchProposal(
         match_cost=5,
         team_A=[MatchRequest(alice, {})],
@@ -206,8 +209,8 @@ def test_start_matches_converts_proposals_to_active_matches():
 
 def test_end_matches_sets_players_idle_and_appends_finished():
     platform, _ = _make_platform()
-    alice = Player(0, "alice", Region.OCEANIA, status=PlayerStatus.PLAYING)
-    bob = Player(1, "bob", Region.OCEANIA, status=PlayerStatus.PLAYING)
+    alice = make_player(0, "alice", Region.OCEANIA, status=PlayerStatus.PLAYING)
+    bob = make_player(1, "bob", Region.OCEANIA, status=PlayerStatus.PLAYING)
     finished = FinishedMatch(match_length=7, winning_team=[alice], losing_team=[bob])
     global_finished: list[FinishedMatch] = []
 
@@ -259,7 +262,7 @@ def test_update_player_features_delegates_to_strategy(mocker):
 
 def test_increment_wait_time():
     platform, _ = _make_platform()
-    req = MatchRequest(Player(0, "alice", Region.OCEANIA))
+    req = MatchRequest(make_player(0, "alice", Region.OCEANIA))
 
     platform.increment_wait_time([req])
 
@@ -299,11 +302,9 @@ def test_simulate_matches_completes_long_enough_matches(mocker):
 
 
 def test_simulate_match_preserves_teams():
-    alice = Player(0, "alice", Region.OCEANIA)
-    bob = Player(1, "bob", Region.OCEANIA)
-    match = ActiveMatch(
-        match_cost=1, team_A=[alice], team_B=[bob], tick_match_length=9
-    )
+    alice = make_player(0, "alice", Region.OCEANIA)
+    bob = make_player(1, "bob", Region.OCEANIA)
+    match = ActiveMatch(match_cost=1, team_A=[alice], team_B=[bob], tick_match_length=9)
 
     finished = _simulate_match(match)
 

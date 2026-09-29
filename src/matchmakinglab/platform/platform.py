@@ -32,7 +32,7 @@ class Platform:
 
             player_features: dict[str, Any] = self.strategy.setup_player_features()
             player = state.add_player(
-                Player(self._id_count, username, region, player_features)
+                Player(self._id_count, username, 0, 0, region, player_features)
             )
 
             self._id_count += 1
@@ -71,8 +71,13 @@ class Platform:
         global_finished_list: list[FinishedMatch],
     ):
         for match in simulated_matches:
-            for player in match.winning_team + match.losing_team:
+            for player in match.winning_team:
                 player.status = PlayerStatus.IDLE
+                player.wins += 1
+
+            for player in match.losing_team:
+                player.status = PlayerStatus.IDLE
+                player.loses += 1
 
             global_finished_list.append(match)
 

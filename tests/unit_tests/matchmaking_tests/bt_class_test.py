@@ -17,7 +17,6 @@ from matchmakinglab.core.models import (
     ActiveMatch,
     FinishedMatch,
     MatchRequest,
-    Player,
     Region,
 )
 from matchmakinglab.matchmakers.bradley_terry.strategy import (
@@ -28,6 +27,7 @@ from matchmakinglab.matchmakers.bradley_terry.strategy import (
     BTOptimisationMethod,
     _model_match,
 )
+from tests.helpers import make_skill_player
 
 
 @pytest.mark.parametrize(
@@ -83,8 +83,8 @@ def test_update_player_features(
 ):
     bt_instance = BradleyTerry()
 
-    winner = Player(0, "winner", Region.OCEANIA, {SKILL_RATING_KEY: winner_skill})
-    loser = Player(1, "loser", Region.OCEANIA, {SKILL_RATING_KEY: loser_skill})
+    winner = make_skill_player(0, "winner", Region.OCEANIA, winner_skill)
+    loser = make_skill_player(1, "loser", Region.OCEANIA, loser_skill)
 
     match = FinishedMatch(match_length=0, winning_team=[winner], losing_team=[loser])
 
@@ -97,8 +97,8 @@ def test_update_player_features(
 def test_update_player_features_asserts_on_empty_teams():
     bt_instance = BradleyTerry()
 
-    winner = Player(0, "winner", Region.OCEANIA, {SKILL_RATING_KEY: 100})
-    loser = Player(1, "loser", Region.OCEANIA, {SKILL_RATING_KEY: 100})
+    winner = make_skill_player(0, "winner", Region.OCEANIA, 100)
+    loser = make_skill_player(1, "loser", Region.OCEANIA, 100)
 
     with pytest.raises(AssertionError):
         bt_instance.update_player_features(
@@ -121,20 +121,28 @@ def test_update_player_features_asserts_on_empty_teams():
         ),
         (
             [
-                MatchRequest(Player(0, "Alice", Region.OCEANIA, {SKILL_RATING_KEY: BASE_SKILL_RATING})),
-                MatchRequest(Player(1, "Bob", Region.OCEANIA, {SKILL_RATING_KEY: BASE_SKILL_RATING})),
+                MatchRequest(
+                    make_skill_player(0, "Alice", Region.OCEANIA, BASE_SKILL_RATING)
+                ),
+                MatchRequest(
+                    make_skill_player(1, "Bob", Region.OCEANIA, BASE_SKILL_RATING)
+                ),
             ],
             [0, 1],
             [],
         ),
         (
             [
-                MatchRequest(Player(0, "Alice", Region.OCEANIA, {SKILL_RATING_KEY: BASE_SKILL_RATING})),
                 MatchRequest(
-                    Player(1, "Bob", Region.OCEANIA, {SKILL_RATING_KEY: BASE_SKILL_RATING + 10})
+                    make_skill_player(0, "Alice", Region.OCEANIA, BASE_SKILL_RATING)
                 ),
                 MatchRequest(
-                    Player(2, "Charlie", Region.OCEANIA, {SKILL_RATING_KEY: BASE_SKILL_RATING + 20})
+                    make_skill_player(1, "Bob", Region.OCEANIA, BASE_SKILL_RATING + 10)
+                ),
+                MatchRequest(
+                    make_skill_player(
+                        2, "Charlie", Region.OCEANIA, BASE_SKILL_RATING + 20
+                    )
                 ),
             ],
             [0, 1],
@@ -151,9 +159,7 @@ def test_run_algorithm_composition(
     for req in queue_snapshot:
         req.req_features = {REGION_KEY: Region.OCEANIA}
 
-    players_matched = [
-        queue_snapshot[index].player for index in matched_indices
-    ]
+    players_matched = [queue_snapshot[index].player for index in matched_indices]
 
     matching_result = (
         [ActiveMatch(match_cost=0)] if players_matched else [],
@@ -193,12 +199,7 @@ def test_run_algorithm_composition(
 
 def test_run_algorithm_raises_for_undefined_candidate_generation_method():
     request = MatchRequest(
-        Player(
-            0,
-            "Alice",
-            Region.OCEANIA,
-            {SKILL_RATING_KEY: BASE_SKILL_RATING},
-        ),
+        make_skill_player(0, "Alice", Region.OCEANIA, BASE_SKILL_RATING),
         {REGION_KEY: Region.OCEANIA},
     )
 
