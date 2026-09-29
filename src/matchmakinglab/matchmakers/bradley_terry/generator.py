@@ -43,6 +43,10 @@ class BradleyTerryGenerator(RequestGenerator):
     * If the pool is fully exhausted, attempts to fetch only active idle players from database state.
     * If partially populated, randomly mixes new signups and existing session pullbacks,
     with automated fallback protections if idle players are hard to locate.
+
+    Every call yields distinct users: a player is a single human and can hold at
+    most one request per batch, so a batch must never be able to queue a player
+    against themselves.
     """
 
     def __init__(self, player_count: int = 500, seed: int | None = None) -> None:
@@ -75,6 +79,8 @@ class BradleyTerryGenerator(RequestGenerator):
 
         # CASE THREE: NON-EMPTY / NON-FULL
         else:
+            emitted: set[str] = set()
+
             for i in range(number):
                 match self._rng.choice(_GEN_TYPES):
                     case GenerationType.NEW_PLAYER:
@@ -86,6 +92,7 @@ class BradleyTerryGenerator(RequestGenerator):
                                     self._pool,
                                     self._rng,
                                     player_database,
+                                    exclude=emitted,
                                 )
                             )
                             break
@@ -96,11 +103,16 @@ class BradleyTerryGenerator(RequestGenerator):
                                     self._index, self._pool, self._rng
                                 )
                             )
+                            emitted.add(self._pool[self._index])
                             self._index += 1
 
                     case GenerationType.EXISTING_PLAYER:
                         existing = _gen_existing_player_request(
-                            self._index, self._pool, self._rng, player_database
+                            self._index,
+                            self._pool,
+                            self._rng,
+                            player_database,
+                            exclude=emitted,
                         )
                         if existing is None:
                             for _ in range(number - i):
@@ -112,10 +124,12 @@ class BradleyTerryGenerator(RequestGenerator):
                                         self._index, self._pool, self._rng
                                     )
                                 )
+                                emitted.add(self._pool[self._index])
                                 self._index += 1
                             break
                         else:
                             result.append(existing)
+                            emitted.add(existing["user"])
 
         return result
 
@@ -132,37 +146,61 @@ def _gen_new_player_request(index, pool, rng):
     }
 
 
-def _gen_existing_player_request(index, pool, rng, database) -> dict | None:
-    player = None
-    username = None
+def _gen_existing_player_request(
+    index, pool, rng, database, exclude: set[str] | None = None
+) -> dict | None:
+    """Draw one idle player from the pool, or return None.
+
+    ``exclude`` holds the usernames already emitted for the batch currently being
+    built. Without it a randomly drawn player can be returned twice, putting two
+    match requests for the same player into one queue — which the matcher would
+    then be free to pair together, letting a player play themselves.
+    """
+    exclude = set() if exclude is None else exclude
+    chosen: str | None = None
     tries = 0
 
-    while tries < MAX_TRIES and (player is None or player.status != PlayerStatus.IDLE):
+    while tries < MAX_TRIES and chosen is None:
         username = pool[rng.randint(0, index - 1)]
         player: Player | None = database.get(username)
+        if (
+            player is not None
+            and player.status == PlayerStatus.IDLE
+            and username not in exclude
+        ):
+            chosen = username
         tries += 1
 
-    if player is None or player.status != PlayerStatus.IDLE:
+    if chosen is None:
         return None
-    else:
-        return {
-            "user": username,
-            "req_features": {
-                LATENCY_KEY: rng.randint(5, 120),
-                REGION_KEY: player.default_region,
-                SKILL_RATING_KEY: player.player_features[SKILL_RATING_KEY],
-            },
-            "is_new": False,
-        }
+
+    player = database[chosen]
+    return {
+        "user": chosen,
+        "req_features": {
+            LATENCY_KEY: rng.randint(5, 120),
+            REGION_KEY: player.default_region,
+            # Direct lookup: the platform always seeds this via the strategy's
+            # setup_player_features, so an absent key means the player did not
+            # come from a BradleyTerry-managed platform.
+            SKILL_RATING_KEY: player.player_features[SKILL_RATING_KEY],
+        },
+        "is_new": False,
+    }
 
 
-def _gen_n_existing_requests(n, index, pool, rng, database) -> list:
+def _gen_n_existing_requests(n, index, pool, rng, database, exclude=None) -> list:
     result = []
+    emitted: set[str] = set() if exclude is None else set(exclude)
+
     for _ in range(n):
-        request = _gen_existing_player_request(index, pool, rng, database)
+        request = _gen_existing_player_request(
+            index, pool, rng, database, exclude=emitted
+        )
         if request is None:
             break
         else:
             result.append(request)
+            emitted.add(request["user"])
 
     return result

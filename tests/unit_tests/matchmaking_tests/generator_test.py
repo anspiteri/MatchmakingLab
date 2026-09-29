@@ -22,6 +22,7 @@ from matchmakinglab.matchmakers.base_generator import RequestGenerator
 from matchmakinglab.matchmakers.bradley_terry.generator import (
     BradleyTerryGenerator,
     _gen_existing_player_request,
+    _gen_n_existing_requests,
 )
 from matchmakinglab.matchmakers.bradley_terry.strategy import (
     BASE_SKILL_RATING,
@@ -146,9 +147,11 @@ def test_existing_requests_use_player_default_region():
         "player_0001": make_skill_player(1, "player_0001", Region.EU),
     }
     gen.generate_requests(2, {})  # exhaust the new-player pool -> CASE TWO
+    # Asking for 4 only yields 2: the batch is capped by the number of distinct
+    # idle players available, since a player may hold only one request.
     requests = gen.generate_requests(4, database)
 
-    assert len(requests) == 4
+    assert len(requests) == len(database)
     for req in requests:
         assert req["user"] in database
         assert req["req_features"][REGION_KEY] == database[req["user"]].default_region
@@ -305,6 +308,142 @@ def test_gen_existing_player_request_returns_none_when_no_idle_player():
     }
 
     assert _gen_existing_player_request(1, ["player_0000"], rng, database) is None
+
+
+# ---------- Distinct users per batch (self-match regression) ----------
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_gen_existing_player_request_skips_excluded_users(seed):
+    pool = ["player_0000", "player_0001"]
+    database = {
+        name: make_skill_player(i, name, Region.OCEANIA) for i, name in enumerate(pool)
+    }
+
+    request = _gen_existing_player_request(
+        len(pool),
+        pool,
+        random.Random(seed),
+        database,
+        exclude={"player_0000"},
+    )
+
+    assert request is not None
+    assert request["user"] == "player_0001"
+
+
+def test_gen_existing_player_request_retries_past_an_excluded_user(mocker):
+    """An excluded draw is a miss, not a reason to give up immediately."""
+    pool = ["player_0000", "player_0001"]
+    database = {
+        name: make_skill_player(i, name, Region.OCEANIA) for i, name in enumerate(pool)
+    }
+    rng = random.Random(0)
+    # randint serves both the pool draw (randint(0, index - 1)) and the latency
+    # draw (randint(5, 120)); they are told apart by the low bound.
+    pool_picks = iter([0, 1])
+
+    def pick(lo, hi):
+        return next(pool_picks) if lo == 0 else 50
+
+    pick_mock = mocker.patch.object(rng, "randint", side_effect=pick)
+
+    request = _gen_existing_player_request(
+        len(pool), pool, rng, database, exclude={"player_0000"}
+    )
+
+    assert request is not None
+    assert request["user"] == "player_0001"
+    assert pick_mock.call_count > 1  # it actually retried
+
+
+def test_gen_existing_player_request_returns_none_when_all_users_excluded(mocker):
+    rng = random.Random(1)
+    database = {"player_0000": make_skill_player(0, "player_0000", Region.OCEANIA)}
+    mocker.patch.object(rng, "randint", return_value=0)
+
+    request = _gen_existing_player_request(
+        1, ["player_0000"], rng, database, exclude={"player_0000"}
+    )
+
+    assert request is None
+
+
+def test_gen_n_existing_requests_never_repeats_a_user():
+    pool = [f"player_{i:04d}" for i in range(8)]
+    database = {
+        name: make_skill_player(i, name, Region.OCEANIA) for i, name in enumerate(pool)
+    }
+
+    requests = _gen_n_existing_requests(6, len(pool), pool, random.Random(3), database)
+
+    users = [req["user"] for req in requests]
+    assert len(users) == 6
+    assert len(set(users)) == 6
+
+
+def test_gen_n_existing_requests_stops_when_distinct_pool_exhausted():
+    """Asking for more than exist returns what is available, not duplicates."""
+    pool = ["player_0000", "player_0001"]
+    database = {
+        name: make_skill_player(i, name, Region.OCEANIA) for i, name in enumerate(pool)
+    }
+
+    requests = _gen_n_existing_requests(5, len(pool), pool, random.Random(1), database)
+
+    users = [req["user"] for req in requests]
+    assert sorted(users) == sorted(pool)
+
+
+def test_gen_n_existing_requests_honours_preexisting_exclusions():
+    pool = ["player_0000", "player_0001", "player_0002"]
+    database = {
+        name: make_skill_player(i, name, Region.OCEANIA) for i, name in enumerate(pool)
+    }
+
+    requests = _gen_n_existing_requests(
+        2, len(pool), pool, random.Random(5), database, exclude={"player_0000"}
+    )
+
+    users = [req["user"] for req in requests]
+    assert "player_0000" not in users
+    assert len(users) == 2
+    assert len(set(users)) == 2
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_generate_requests_never_names_a_player_twice(seed):
+    """Every batch, in every mode, yields distinct users."""
+    generator = BradleyTerryGenerator(player_count=8, seed=seed)
+    database = {
+        req["user"]: make_skill_player(
+            i, req["user"], Region.OCEANIA, status=PlayerStatus.IDLE
+        )
+        for i, req in enumerate(generator.generate_requests(4, {}))
+    }
+
+    # Mixed mode, then existing-only mode, then a re-seeded mixed mode.
+    for requests in (
+        generator.generate_requests(6, database),
+        generator.generate_requests(6, database),
+    ):
+        users = [req["user"] for req in requests]
+        assert len(users) == len(set(users)), f"duplicate user in batch for seed {seed}"
+
+
+def test_generate_requests_mixed_mode_skips_names_already_used():
+    """A new signup and a pulled-back player cannot collide within one batch."""
+    generator = BradleyTerryGenerator(player_count=4, seed=2)
+    database = {
+        req["user"]: make_skill_player(
+            i, req["user"], Region.OCEANIA, status=PlayerStatus.IDLE
+        )
+        for i, req in enumerate(generator.generate_requests(2, {}))
+    }
+
+    for _ in range(20):
+        users = [req["user"] for req in generator.generate_requests(4, database)]
+        assert len(users) == len(set(users))
 
 
 # ---------- BradleyTerryFactory ----------
