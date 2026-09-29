@@ -27,6 +27,8 @@ class PlayerStatus(Enum):
 class Player:
     id: int
     username: str
+    wins: int
+    loses: int
     default_region: Region
     player_features: dict[str, Any] = field(default_factory=dict)
     status: PlayerStatus = PlayerStatus.IDLE

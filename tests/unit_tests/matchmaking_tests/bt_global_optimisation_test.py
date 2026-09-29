@@ -10,13 +10,14 @@ from unittest.mock import Mock
 
 import pytest
 
-from matchmakinglab.core.models import MatchRequest, Player, Region
+from matchmakinglab.core.models import MatchRequest, Region
 from matchmakinglab.matchmakers.bradley_terry.strategy import (
     BTOptimisationMethod,
     MatchModel,
     _greedy_optimisation,
     _queue_matching_function,
 )
+from tests.helpers import make_player
 
 # ---------- Composition Correctness -------------
 
@@ -127,10 +128,10 @@ def test_queue_matching_composition(mocker, method):
 )
 def test_greedy_optimisation(model_data, expected_pairs, expected_cost):
     players = [
-        Player(0, "user_0", Region.OCEANIA),
-        Player(1, "user_1", Region.OCEANIA),
-        Player(2, "user_2", Region.OCEANIA),
-        Player(3, "user_3", Region.OCEANIA),
+        make_player(0, "user_0", Region.OCEANIA),
+        make_player(1, "user_1", Region.OCEANIA),
+        make_player(2, "user_2", Region.OCEANIA),
+        make_player(3, "user_3", Region.OCEANIA),
     ]
 
     match_models = [
