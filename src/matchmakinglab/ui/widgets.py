@@ -50,19 +50,39 @@ class StatePanel(_KeyValuePanel):
 
 
 class AnalyticsPanel(_KeyValuePanel):
-    """Analytics metrics (placeholders subject to change)."""
+    """Analytics metrics: throughput above, match quality below."""
 
     matches = reactive(0)
     avg_wait = reactive(0.0)
     avg_match_len = reactive(0.0)
     request_rate = reactive(0.0)
+    favourite_win_rate = reactive(0.0)
+    rating_accuracy = reactive(0.0)
+    rating_spread = reactive(0.0)
+    true_skill_spread = reactive(0.0)
 
     def _rows(self) -> list[tuple[str, str]]:
         return [
             ("Matches", f"{self.matches}"),
             ("Avg wait", f"{self.avg_wait:0.1f}s"),
-            ("Avg match length", f"{self.avg_match_len:0.1f}s"),
+            # In rounds, not seconds: matches now play out to a points target, so
+            # the length is a count of rounds taken and carries no unit of time.
+            ("Avg rounds", f"{self.avg_match_len:0.1f}"),
             ("Request rate", f"{self.request_rate:0.1f}/s"),
+            # 0.0 stands for "no decided matches yet" as well as a real 0%, so it
+            # is shown as "—" rather than a number that looks measured.
+            (
+                "Favourite win rate",
+                f"{self.favourite_win_rate:0.1%}" if self.favourite_win_rate else "—",
+            ),
+            (
+                "Rating accuracy",
+                f"{self.rating_accuracy:0.3f}" if self.rating_accuracy else "—",
+            ),
+            (
+                "Rating / true spread",
+                f"{self.rating_spread:0.0f} / {self.true_skill_spread:0.0f}",
+            ),
         ]
 
 

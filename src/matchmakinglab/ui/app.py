@@ -141,6 +141,10 @@ class MatchmakingLabApp(App):
         self.analytics_panel.avg_wait = snapshot.avg_wait
         self.analytics_panel.avg_match_len = snapshot.avg_match_len
         self.analytics_panel.request_rate = snapshot.request_rate
+        self.analytics_panel.favourite_win_rate = snapshot.favourite_win_rate
+        self.analytics_panel.rating_accuracy = snapshot.rating_accuracy
+        self.analytics_panel.rating_spread = snapshot.rating_spread
+        self.analytics_panel.true_skill_spread = snapshot.true_skill_spread
 
         self.feed.append_events(snapshot.event_lines)
 

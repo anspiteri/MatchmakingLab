@@ -10,9 +10,12 @@ and independent of the TUI.
 import re
 from itertools import pairwise
 
+import pytest
+
 from matchmakinglab.core.models import (
     LATENCY_KEY,
     REGION_KEY,
+    TRUE_SKILL_KEY,
     PlayerStatus,
     Region,
 )
@@ -531,3 +534,158 @@ def test_self_match_defect_is_fixed_at_the_generator():
     # Only three distinct idle players exist, so the batch is capped by
     # availability rather than the requested count.
     assert len(users) == len(database)
+
+
+# ---------- Match quality metrics ----------
+#
+# These describe how good the matches being formed are, as opposed to how fast.
+# They exist to be read live next to the documented over-dispersion limit, so the
+# two tests that matter most are the ones pinning the definition of "favourite"
+# and the ordering of the quality tally relative to the rating update.
+
+
+def test_favourite_win_rate_counts_only_decided_matches():
+    """Equal-rated sides are left out entirely.
+
+    When both sides carry the same rating neither is the favourite, so the match
+    says nothing about overconfidence. Counting it would pull the rate toward
+    0.5 for free and make the number look healthier than it is.
+    """
+    harness = _make_harness(seed=1)
+    snapshot = _run(harness, 60)
+
+    assert snapshot.finished_matches > 0
+    assert 0.0 <= snapshot.favourite_win_rate <= 1.0
+
+
+def test_favourite_win_rate_is_zero_before_any_decided_match():
+    """Reports "no data" as 0.0 rather than inventing a rate."""
+    harness = _make_harness(seed=1)
+    snapshot = _run(harness, 3)
+
+    assert snapshot.favourite_win_rate == 0.0
+
+
+def test_favourite_is_judged_on_ratings_from_before_the_match():
+    """Regression: who led going in, not who leads after the update.
+
+    Read after `update_player_features`, the winner has just been boosted and
+    the loser knocked down, so the winner is the favourite in nearly every match
+    and the metric reports the rating rule back to itself — it read 0.974 that
+    way against a true ceiling near 0.60. Moving the tally ahead of the update
+    is what makes it a measurement.
+    """
+    harness = _make_harness(seed=1)
+    pre_update: list[bool] = []
+    original = SimHarness._record_match_quality
+
+    def spy(self, newly_finished):
+        for match in newly_finished:
+            winning = sum(
+                p.player_features[SKILL_RATING_KEY] for p in match.winning_team
+            )
+            losing = sum(p.player_features[SKILL_RATING_KEY] for p in match.losing_team)
+            if winning != losing:
+                pre_update.append(winning > losing)
+        return original(self, newly_finished)
+
+    SimHarness._record_match_quality = spy
+    try:
+        snapshot = _run(harness, 60)
+    finally:
+        SimHarness._record_match_quality = original
+
+    assert pre_update, "no decided matches were seen, so this proves nothing"
+    expected = sum(pre_update) / len(pre_update)
+    assert snapshot.favourite_win_rate == pytest.approx(expected)
+    # If the tally were reading post-update ratings the winner would lead almost
+    # always. Pin it well below that so the bug cannot come back quietly.
+    assert snapshot.favourite_win_rate < 0.9
+
+
+def test_favourite_win_rate_stays_below_the_honest_ceiling():
+    """Sanity check that the rate measures overconfidence, not its absence.
+
+    No matchmaker can beat the ceiling the hidden-truth outcome model imposes, so
+    a rate that drifts far above the mid-0.6s would mean the metric has stopped
+    tracking pairing quality. A wide bound, because the exact value depends on
+    how the matchmaker happens to pair — only a runaway is a defect.
+    """
+    harness = _make_harness(seed=1, player_count=150)
+    snapshot = _run(harness, 400)
+
+    assert 0.4 < snapshot.favourite_win_rate < 0.8
+
+
+def test_rating_accuracy_improves_as_the_run_proceeds():
+    """The estimate is supposed to be learning, so it must move toward the truth."""
+    harness = _make_harness(seed=1, player_count=150)
+
+    early = _run(harness, 50).rating_accuracy
+    late = _run(harness, 550).rating_accuracy
+
+    assert early > 0.0
+    assert late > early
+
+
+def test_rating_accuracy_matches_a_direct_recomputation():
+    """Guard the incremental Pearson accumulator against drift.
+
+    The correlation is kept as running sums rather than recomputed over the
+    playerbase each tick, which is cheaper but easy to get subtly wrong. Checking
+    it against the naive computation keeps the optimisation honest.
+    """
+    harness = _make_harness(seed=1, player_count=150)
+    _run(harness, 300)
+    snapshot = harness.step()
+
+    xs = []
+    ys = []
+    for player in harness.state.player_database.values():
+        if player.wins + player.loses == 0:
+            continue
+        xs.append(float(player.player_features[SKILL_RATING_KEY]))
+        ys.append(float(player.player_features[TRUE_SKILL_KEY]))
+
+    n = len(xs)
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+    covariance = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    expected = covariance / (
+        sum((x - mean_x) ** 2 for x in xs) ** 0.5
+        * sum((y - mean_y) ** 2 for y in ys) ** 0.5
+    )
+
+    assert snapshot.rating_accuracy == pytest.approx(expected, abs=0.05)
+
+
+def test_spreads_are_taken_over_the_same_played_players():
+    """Estimated and true spread share a denominator, so their ratio is meaningful."""
+    harness = _make_harness(seed=1, player_count=150)
+    snapshot = _run(harness, 300)
+
+    played = [p for p in harness.state.player_database.values() if p.wins + p.loses > 0]
+    ratings = [p.player_features[SKILL_RATING_KEY] for p in played]
+    truths = [p.player_features[TRUE_SKILL_KEY] for p in played]
+
+    assert snapshot.rating_spread == pytest.approx(max(ratings) - min(ratings))
+    assert snapshot.true_skill_spread == pytest.approx(max(truths) - min(truths))
+
+
+def test_spreads_start_below_the_truth_and_later_overshoot_it():
+    """The panel shows the documented drift, so it must actually be visible.
+
+    Early on every estimate sits at the shared base rating, so the estimated
+    spread starts well under the truth and climbs. Crossing above it is the
+    over-dispersion the previous commit documented, and putting these two numbers
+    side by side is the point of showing both. Measured to be reliable across
+    seeds: still under at 600 ticks, over from 900 on.
+    """
+    harness = _make_harness(seed=1, player_count=150)
+
+    early = _run(harness, 50)
+    late = _run(harness, 850)
+
+    assert early.rating_spread < early.true_skill_spread
+    assert late.rating_spread > late.true_skill_spread
+    assert late.rating_accuracy > early.rating_accuracy

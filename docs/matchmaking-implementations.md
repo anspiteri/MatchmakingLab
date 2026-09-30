@@ -74,6 +74,39 @@ because it means re-deriving the update and the reported scale together, and
 the lab can produce meaningful results while it is still a known distortion —
 worth doing before rating numbers are compared across approaches.
 
+#### Reading the analytics panel
+
+The panel reports throughput in its top half and match quality in its bottom
+half. The quality numbers are the ones worth watching, because they are the only
+things here that can tell you a matchmaker is doing badly:
+
+- **Favourite win rate** — of decided matches, how often the higher-rated side
+  won. Roughly 0.6 in a healthy run: above that means the matchmaker is
+  overconfident and pairing lopsided games, well below means results are not
+  tracking its own ordering. Matches where both sides carry the same rating are
+  excluded, since neither side was the favourite and the match says nothing about
+  overconfidence.
+- **Rating accuracy** — correlation between estimated rating and hidden truth
+  across players who have played. Should climb as the run proceeds.
+- **Rating / true spread** — the estimated and true spreads over the same played
+  players, which is the form the over-dispersion above is measured in. Watching
+  the left number start below the right one and then climb past it is watching
+  the documented drift happen.
+
+Two ordering details are load-bearing, and both are pinned by tests in
+`tests/unit_tests/matchmaking_tests/harness_test.py`:
+
+The favourite win rate is tallied **before** the rating update, not after. Read
+afterwards, the winner has just been boosted and the loser knocked down, so the
+winner is the favourite in nearly every match — the metric would report the
+rating rule back to itself, reading 0.974 that way against a true ceiling near
+0.60.
+
+All three quality measures cover the same set of **distinct** players who have
+played. Weighting by match appearances instead would let a busy player carry the
+weight of several and would put the spread figures out of step with the
+over-dispersion numbers above, which are per-player.
+
 #### What the dispersion test is for
 
 `tests/unit_tests/matchmaking_tests/bt_class_test.py` carries a tripwire

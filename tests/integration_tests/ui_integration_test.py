@@ -135,6 +135,83 @@ def test_analytics_panel_tracks_finished_matches():
     assert asyncio.run(scenario()) > 0
 
 
+def test_analytics_panel_surfaces_match_quality_metrics():
+    """The quality rows are populated from the harness, not left at their defaults.
+
+    These are the numbers that make the panel worth watching: favourite win rate
+    says whether the matchmaker is overconfident, rating accuracy says whether its
+    model of the playerbase is any good, and the two spreads put the documented
+    over-dispersion on screen next to the truth it is drifting from.
+    """
+
+    async def scenario():
+        app = _make_app(player_count=150)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(2.0)
+            shown = (
+                app.analytics_panel.favourite_win_rate,
+                app.analytics_panel.rating_accuracy,
+                app.analytics_panel.rating_spread,
+                app.analytics_panel.true_skill_spread,
+            )
+            app.exit()
+            await pilot.pause()
+            return shown
+
+    favourite_win_rate, rating_accuracy, rating_spread, true_skill_spread = asyncio.run(
+        scenario()
+    )
+
+    # A rate of exactly 0.0 or 1.0 would mean the metric is stuck at a default or
+    # is measuring itself rather than the matchmaker (see the harness regression
+    # test for the second failure mode).
+    assert 0.0 < favourite_win_rate < 1.0
+    assert rating_accuracy > 0.0
+    assert rating_spread > 0.0
+    assert true_skill_spread > 0.0
+
+
+def test_analytics_panel_renders_quality_rows_with_their_labels():
+    """The new metrics are labelled, so a reader knows which number is which."""
+
+    async def scenario():
+        app = _make_app(player_count=150)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(2.0)
+            labels = [label for label, _ in app.analytics_panel._rows()]
+            app.exit()
+            await pilot.pause()
+            return labels
+
+    labels = asyncio.run(scenario())
+
+    assert "Favourite win rate" in labels
+    assert "Rating accuracy" in labels
+    assert "Rating / true spread" in labels
+
+
+def test_analytics_panel_shows_a_placeholder_before_data_exists():
+    """ "No data yet" must not look like a measured zero.
+
+    Early on there are no decided matches, so the rate is 0.0. Rendered as a bare
+    number it would read as "the favourite never wins", which is a claim the
+    simulation has not earned yet.
+    """
+
+    async def scenario():
+        app = _make_app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.0)
+            values = dict(app.analytics_panel._rows())
+            app.exit()
+            await pilot.pause()
+            return values
+
+    values = asyncio.run(scenario())
+
+    assert values["Favourite win rate"] == "\u2014"
+
+
 def test_quit_binding_exits_the_app():
     """q shuts the app down cleanly."""
 

@@ -149,3 +149,10 @@ The README be both a good overview of the whole project, while also providing a 
 #### Generating Data
 - To generate data for the demo, can look into randomising based on enumerators for discrete fields, and probability based methods for related fields (skill_rating, player features) and fuzzing maybe for player_identifier or just incremental ids.
 - I wonder if I could create a algorithm that generates players and server activity at run time?
+
+- **Analytics panel: match quality metrics** (`feat:` commit, closing out this branch). The panel previously showed only throughput — how fast matches were being formed, which says nothing about whether they were any good. Added favourite win rate, rating accuracy, and estimated-vs-true spread. The spread pair is the one I am happiest about: it puts the over-dispersion written up above on screen next to the truth it drifts from, so the limitation is observable rather than only documented. Favourite win rate sits near 0.6 in a healthy run, which is the honest ceiling the hidden-truth outcome model imposes — pushing it higher is a symptom, not an achievement.
+
+Two bugs found while building this, both by tests written to check the definitions rather than the outputs:
+
+- The favourite win rate was tallied *after* the rating update, so the winner had just been boosted and read as the favourite in nearly every match — 0.974, against a true ceiling near 0.60. The metric was reporting the rating rule back to itself. Who led going in is a different question from who leads afterwards.
+- The accuracy correlation was accumulated per match appearance while the spreads used distinct players, so the two disagreed about their own population. Now all three quality measures cover the same distinct played players, which is also the population the over-dispersion figures are written in. Worth noting my first attempt at the incremental accumulator was only ever going to be replaced: the O(n) pass over the player database was already being paid for the spreads, so computing the correlation there too cost nothing and removed a whole set of running sums to get wrong.

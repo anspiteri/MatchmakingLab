@@ -81,7 +81,7 @@ The display is a [Textual](https://github.com/Textualize/textual) application (`
 - a header showing the strategy config summary, version and seed;
 - a scrolling **event feed** (`ui/widgets.py` → `EventFeed`, a `RichLog`) of generated/queued/matched/finished events;
 - a **Platform / State** panel (queue, active matches, tick, wall-clock sim time);
-- an **Analytics** panel (placeholders);
+- an **Analytics** panel, in two halves: throughput (matches, avg wait, avg rounds, request rate) above, and match *quality* below — favourite win rate, rating accuracy, and estimated/true spread;
 - a status bar showing run state, speed multiplier and keybindings.
 
 A tick timer (interval `BASE_TICK_SECONDS / speed`) drives `harness.step()`; the resulting `SimSnapshot` updates reactive widget attributes which repaint the panels. Keybindings: `Space` pause/resume, `j`/`k` double/halve the speed multiplier (min `×1`), `q` quit.

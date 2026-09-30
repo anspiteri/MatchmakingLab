@@ -86,8 +86,24 @@ def test_analytics_panel_render_rows():
 
     assert "Matches" in text and "4" in text
     assert "Avg wait" in text and "1.5s" in text
-    assert "Avg match length" in text and "6.2s" in text
+    # Labelled as rounds and carrying no time unit: matches play out to a points
+    # target, so length counts rounds taken rather than seconds elapsed.
+    assert "Avg rounds" in text and "6.2" in text
     assert "Request rate" in text and "20.0/s" in text
+
+
+def test_analytics_panel_renders_quality_rows_when_populated():
+    panel = AnalyticsPanel()
+    panel.favourite_win_rate = 0.594
+    panel.rating_accuracy = 0.709
+    panel.rating_spread = 112.0
+    panel.true_skill_spread = 120.0
+
+    text = panel.render()
+
+    assert "Favourite win rate" in text and "59.4%" in text
+    assert "Rating accuracy" in text and "0.709" in text
+    assert "Rating / true spread" in text and "112 / 120" in text
 
 
 def test_status_bar_render_running():
