@@ -79,10 +79,21 @@ class MatchProposal:
 
 @dataclass
 class ActiveMatch:
+    """A match in progress.
+
+    ``score_A``/``score_B`` are the running round wins for each side, and
+    ``tick_match_length`` doubles as the number of rounds played. A match ends
+    when one side reaches the simulator's points target, so length is an
+    *outcome* of how the match went rather than an independently chosen number:
+    a lopsided pairing finishes quickly and a close one runs long.
+    """
+
     match_cost: int
     team_A: list[Player] = field(default_factory=list)
     team_B: list[Player] = field(default_factory=list)
     tick_match_length: int = 0
+    score_A: int = 0
+    score_B: int = 0
 
 
 @dataclass

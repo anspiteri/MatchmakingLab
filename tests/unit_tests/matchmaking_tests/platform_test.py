@@ -25,8 +25,12 @@ from matchmakinglab.platform.platform import (
     MIN_TRUE_SKILL,
     Platform,
 )
-from matchmakinglab.platform.simulator import Simulator, _simulate_match
-from tests.helpers import make_player
+from matchmakinglab.platform.simulator import (
+    POINTS_TO_WIN,
+    Simulator,
+    _simulate_match,
+)
+from tests.helpers import make_player, make_skill_player
 
 
 def _req_features() -> dict:
@@ -350,59 +354,201 @@ def test_increment_wait_time():
 
 
 # ---------- Simulator ----------
+#
+# A match is a race to POINTS_TO_WIN: each tick every active match plays a
+# round, the round winner is drawn from the outcome model's probability, and the
+# match ends when a side reaches the target. Two properties fall out of that and
+# are asserted throughout — a match cannot overrun the bound, and no side is
+# favoured by the order it happens to be listed in.
 
 
-def test_simulate_matches_advances_all_clocks(mocker):
-    simulator = Simulator()
-    active = [
-        ActiveMatch(match_cost=1),
-        ActiveMatch(match_cost=2),
-    ]
+def _run_to_completion(
+    active: list[ActiveMatch], simulator: Simulator, limit: int = 100
+) -> list[FinishedMatch]:
+    """Tick until everything finishes (or the guard trips)."""
+    finished: list[FinishedMatch] = []
+    for _ in range(limit):
+        finished.extend(simulator.simulate_matches(active))
+        if not active:
+            break
+    return finished
 
-    # Threshold above any current clock value -> nothing finishes.
-    mocker.patch.object(simulator._rng, "randint", return_value=60)
-    finished = simulator.simulate_matches(active)
+
+def test_simulate_matches_advances_every_clock_by_one_round():
+    simulator = Simulator(seed=1)
+    active = [ActiveMatch(match_cost=1), ActiveMatch(match_cost=2)]
+
+    simulator.simulate_matches(active)
 
     assert [m.tick_match_length for m in active] == [1, 1]
-    assert len(active) == 2
-    assert finished == []
+    # One round means exactly one point is credited, and the match is still live.
+    assert sum(m.score_A + m.score_B for m in active) == 2
+    assert all(m.score_A < POINTS_TO_WIN and m.score_B < POINTS_TO_WIN for m in active)
 
 
-def test_simulate_matches_completes_long_enough_matches(mocker):
-    simulator = Simulator()
-    active = [ActiveMatch(match_cost=1, tick_match_length=6)]
+def test_simulate_matches_only_removes_finished_matches():
+    simulator = Simulator(seed=2)
+    # One match has already reached the target, the other has barely started.
+    # (A match merely one point short would not reliably finish: if the other
+    # side takes that round, neither side is at the target.)
+    done = ActiveMatch(match_cost=1, score_A=POINTS_TO_WIN)
+    barely_started = ActiveMatch(match_cost=2, score_B=1)
+    active = [done, barely_started]
 
-    # Low threshold -> the single match crosses it and finishes.
-    mocker.patch.object(simulator._rng, "randint", return_value=5)
     finished = simulator.simulate_matches(active)
 
-    assert len(active) == 0
     assert len(finished) == 1
-    assert finished[0].match_length == 7  # clock advanced to 7 before completion
+    assert [m.match_cost for m in active] == [2]
 
 
-def test_simulate_matches_only_removes_finished_matches(mocker):
-    simulator = Simulator()
-    # randint is consumed once per active match: 1st finishes, 2nd does not.
-    mocker.patch.object(simulator._rng, "randint", side_effect=[5, 60])
-    finished_match = ActiveMatch(match_cost=1, tick_match_length=5)
-    running_match = ActiveMatch(match_cost=2, tick_match_length=5)
-    active = [finished_match, running_match]
+def test_match_ends_when_a_side_reaches_the_points_target():
+    simulator = Simulator(seed=3)
+    alice = make_skill_player(0, "alice")
+    bob = make_skill_player(1, "bob")
+    # Evenly matched, so the race is genuinely undecided before the final round.
+    match = ActiveMatch(
+        match_cost=1,
+        team_A=[alice],
+        team_B=[bob],
+        score_A=POINTS_TO_WIN - 1,
+        score_B=POINTS_TO_WIN - 1,
+    )
+    active = [match]
 
     finished = simulator.simulate_matches(active)
 
-    assert finished == [FinishedMatch(6, [], [])]
-    assert active == [running_match]
+    assert len(finished) == 1
+    # Whoever took the last point wins, whichever side that was.
+    result = finished[0]
+    if result.winning_team == [alice]:
+        assert result.losing_team == [bob]
+    else:
+        assert result.winning_team == [bob]
+        assert result.losing_team == [alice]
 
 
-def test_simulate_match_preserves_teams():
-    alice = make_player(0, "alice")
-    bob = make_player(1, "bob")
-    match = ActiveMatch(match_cost=1, team_A=[alice], team_B=[bob], tick_match_length=9)
+def test_every_finished_match_credits_one_whole_side():
+    """A result is a clean win for one side, never a split or a draw.
+
+    The race to a points target cannot tie, so a draw state would have nothing
+    to represent; this pins that the two sides are always distinct.
+    """
+    simulator = Simulator(seed=4)
+    alice = make_skill_player(0, "alice")
+    bob = make_skill_player(1, "bob")
+
+    active = [ActiveMatch(match_cost=1, team_A=[alice], team_B=[bob])]
+    finished = _run_to_completion(active, simulator)
+
+    assert len(finished) == 1
+    result = finished[0]
+    sides = {
+        tuple(p.id for p in result.winning_team),
+        tuple(p.id for p in result.losing_team),
+    }
+    assert sides == {(alice.id,), (bob.id,)}
+
+
+def test_a_match_always_finishes_and_never_overruns_its_bound():
+    """The race is self-bounding, so no duration cap is needed."""
+    simulator = Simulator(seed=5)
+    # Evenly matched: the longest possible contest.
+    active = [ActiveMatch(match_cost=1)]
+
+    finished = _run_to_completion(active, simulator)
+
+    assert len(finished) == 1
+    assert active == []
+    assert 1 <= finished[0].match_length <= 2 * POINTS_TO_WIN - 1
+
+
+def test_either_side_can_win_a_repeated_pairing():
+    """Regression test for the old placeholder, which always credited team A.
+
+    Run the same pairing many times: if results depended on which side a player
+    was listed on, one side would win every time.
+    """
+    alice = make_skill_player(0, "alice")
+    bob = make_skill_player(1, "bob")
+
+    winners = set()
+    for seed in range(60):
+        simulator = Simulator(seed=seed)
+        match = ActiveMatch(match_cost=1, team_A=[alice], team_B=[bob])
+        finished = _run_to_completion([match], simulator)
+        assert len(finished) == 1
+        winners.add(tuple(p.id for p in finished[0].winning_team))
+
+    assert len(winners) == 2, "one side won every time — a positional bias remains"
+
+
+def test_the_stronger_player_wins_more_often():
+    """Outcome must depend on ability, not on chance alone."""
+    strong = make_skill_player(0, "strong", true_skill=160, skill_rating=100)
+    weak = make_skill_player(1, "weak", true_skill=40, skill_rating=100)
+
+    wins = 0
+    trials = 400
+    for seed in range(trials):
+        simulator = Simulator(seed=seed)
+        match = ActiveMatch(match_cost=1, team_A=[strong], team_B=[weak])
+        finished = _run_to_completion([match], simulator)
+        if finished[0].winning_team[0].id == strong.id:
+            wins += 1
+
+    assert wins > trials * 0.6, f"strong side won only {wins}/{trials} matches"
+
+
+def test_match_play_never_mutates_a_players_hidden_skill():
+    """The truth the outcomes are drawn from must stay fixed.
+
+    If the simulation edited its own ground truth it would be marking its own
+    homework, and every metric derived from it would be meaningless.
+    """
+    alice = make_skill_player(0, "alice", true_skill=140)
+    bob = make_skill_player(1, "bob", true_skill=60)
+
+    before = {
+        alice.id: alice.player_features[TRUE_SKILL_KEY],
+        bob.id: bob.player_features[TRUE_SKILL_KEY],
+    }
+    simulator = Simulator(seed=6)
+    _run_to_completion(
+        [ActiveMatch(match_cost=1, team_A=[alice], team_B=[bob])], simulator
+    )
+
+    for player in (alice, bob):
+        assert player.player_features[TRUE_SKILL_KEY] == before[player.id]
+
+
+def test_same_seed_produces_the_same_winners():
+    def run(seed: int) -> list[tuple[int, ...]]:
+        alice = make_skill_player(0, "alice", true_skill=140)
+        bob = make_skill_player(1, "bob", true_skill=60)
+        simulator = Simulator(seed=seed)
+        finished = _run_to_completion(
+            [ActiveMatch(match_cost=1, team_A=[alice], team_B=[bob])], simulator
+        )
+        return [(tuple(p.id for p in m.winning_team), m.match_length) for m in finished]
+
+    assert run(7) == run(7)
+
+
+def test_simulate_match_reports_the_side_that_reached_the_target():
+    alice = make_skill_player(0, "alice")
+    bob = make_skill_player(1, "bob")
+    match = ActiveMatch(
+        match_cost=1,
+        team_A=[alice],
+        team_B=[bob],
+        tick_match_length=4,
+        score_A=POINTS_TO_WIN,
+        score_B=1,
+    )
 
     finished = _simulate_match(match)
 
-    assert finished.match_length == 9
+    assert finished.match_length == 4
     assert finished.winning_team == [alice]
     assert finished.losing_team == [bob]
 

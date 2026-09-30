@@ -30,6 +30,16 @@ class Platform:
         self.strategy = strategy
         self._rng = rng
 
+    def use_rng(self, rng: Random) -> None:
+        """Attach the source of hidden-skill draws, if none was given at build.
+
+        The harness calls this so a seeded run also seeds player ability. A
+        platform built with its own rng keeps it: an explicitly supplied source
+        is never silently replaced.
+        """
+        if self._rng is None:
+            self._rng = rng
+
     def add_to_matchmaking_queue(
         self, username: str, req_features: dict[str, Any], state: PlatformState
     ):

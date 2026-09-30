@@ -305,11 +305,15 @@ def test_state_panel_renders_population_and_queue_rows():
 def test_feed_distinguishes_new_and_existing_requests():
     """The feed labels brand new signups differently from returning players."""
 
+    # A tiny pool and no speed-up, on purpose. Matches now finish in a few
+    # rounds, so events accumulate several times faster than before; a long or
+    # accelerated run fills the feed's scrollback and pushes the earliest
+    # signups out of the buffer before they can be asserted on. Exhausting four
+    # players immediately keeps the whole run comfortably inside it.
     async def scenario():
-        app = _make_app(player_count=SMALL_POOL, requests_per_step=4, seed=3)
+        app = _make_app(player_count=4, requests_per_step=4, seed=3)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.press("k", "k", "k")
-            await pilot.pause(1.0)
+            await pilot.pause(1.5)
             feed_text = [line.text for line in app.feed.lines]
             app.exit()
             await pilot.pause()

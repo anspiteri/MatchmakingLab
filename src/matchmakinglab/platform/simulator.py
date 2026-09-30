@@ -1,37 +1,87 @@
-import random
+from random import Random
 
 from matchmakinglab.core.models import ActiveMatch, FinishedMatch
+from matchmakinglab.platform.outcome import MatchOutcomeModel, TrueSkillOutcome
 
-MIN_TICK_TIME = 5  # below 5 ticks, guarentees match continues
-MAX_TICK_TIME = 60  # above 60 ticks, guarentees match end
+# Points needed to take a match. A race to a fixed target cannot overrun: with
+# one point awarded per round, some side necessarily reaches this first, and the
+# longest possible match is 2 * POINTS_TO_WIN - 1 rounds.
+POINTS_TO_WIN = 3
+
+# Rounds played per tick. Kept at one so a round reads as a single tick of sim
+# time and match length stays directly comparable to the number of ticks a match
+# occupied.
+ROUNDS_PER_TICK = 1
+
+
+def _simulate_round(
+    match: ActiveMatch, rng: Random, outcome_model: MatchOutcomeModel
+) -> None:
+    """Play one round of an active match, crediting a point to the winning side.
+
+    The round winner is drawn from the outcome model's probability for team A.
+    Drawing on team A's probability (rather than, say, always rolling for the
+    first-listed side) is what keeps the simulation free of a positional bias:
+    the team a player happens to be listed on cannot influence their odds.
+    """
+    probability = outcome_model.win_probability(match.team_A, match.team_B)
+
+    if rng.random() < probability:
+        match.score_A += 1
+    else:
+        match.score_B += 1
+
+    match.tick_match_length += 1
+
+
+def _is_finished(match: ActiveMatch, points_to_win: int) -> bool:
+    return match.score_A >= points_to_win or match.score_B >= points_to_win
 
 
 def _simulate_match(match: ActiveMatch) -> FinishedMatch:
-    # TODO: actual match simulation maths (win logic etc.). Currently the
-    # winning/losing teams are just the two teams in request order.
-    return FinishedMatch(match.tick_match_length, match.team_A, match.team_B)
+    """Convert a completed match into a result.
+
+    Only called once a side has reached the points target, so exactly one team
+    is credited as the winner. Because the race is self-bounding, matches cannot
+    tie: a side always reaches the target first, and a draw state would have
+    nothing to represent.
+    """
+    if match.score_A > match.score_B:
+        return FinishedMatch(match.tick_match_length, match.team_A, match.team_B)
+
+    return FinishedMatch(match.tick_match_length, match.team_B, match.team_A)
 
 
 class Simulator:
-    def __init__(self, seed: int | None = None) -> None:
-        self._rng = random.Random(seed)
+    def __init__(
+        self,
+        seed: int | None = None,
+        outcome_model: MatchOutcomeModel | None = None,
+        points_to_win: int = POINTS_TO_WIN,
+    ) -> None:
+        self._rng = Random(seed)
+        # Defaults to the hidden real ability, so results stay independent of
+        # the matchmaker being evaluated.
+        self._outcome_model: MatchOutcomeModel = (
+            outcome_model if outcome_model is not None else TrueSkillOutcome()
+        )
+        self._points_to_win = points_to_win
 
-    def simulate_matches(self, active_matches: list[ActiveMatch]):
-        # Advance the clock of every active match, then collect those that have
-        # run for long enough. Two-pass avoids mutating the list while iterating.
-        result = []
+    def simulate_matches(
+        self, active_matches: list[ActiveMatch]
+    ) -> list[FinishedMatch]:
+        """Advance every active match by a tick, returning those that finish.
 
+        Matches are advanced first and collected afterwards so the finished list
+        is not built while iterating the list being mutated.
+        """
         for match in active_matches:
-            match.tick_match_length += 1
+            for _ in range(ROUNDS_PER_TICK):
+                _simulate_round(match, self._rng, self._outcome_model)
 
-        finished = [
-            m
-            for m in active_matches
-            if m.tick_match_length > self._rng.randint(MIN_TICK_TIME, MAX_TICK_TIME)
-        ]
+        finished = [m for m in active_matches if _is_finished(m, self._points_to_win)]
 
         for match in finished:
             active_matches.remove(match)
-            result.append(_simulate_match(match))
 
-        return result
+        return [_simulate_match(match) for match in finished]

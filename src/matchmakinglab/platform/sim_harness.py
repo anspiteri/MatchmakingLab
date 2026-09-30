@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from random import Random
 
 from matchmakinglab.core.models import (
     LATENCY_KEY,
@@ -12,6 +13,7 @@ from matchmakinglab.matchmakers.bradley_terry.strategy import (
     BASE_SKILL_RATING,
     SKILL_RATING_KEY,
 )
+from matchmakinglab.platform.outcome import MatchOutcomeModel, TrueSkillOutcome
 from matchmakinglab.platform.platform import Platform
 from matchmakinglab.platform.simulator import Simulator
 
@@ -43,10 +45,17 @@ class SimHarness:
         requests_per_step: int = 10,
         seed: int | None = None,
         clock: Callable[[], float] = _clock,
+        outcome_model: MatchOutcomeModel | None = None,
     ) -> None:
         self.generator = generator
         self.platform = platform
-        self.simulator = simulator or Simulator(seed)
+        # The platform draws each new player's hidden real ability, so it needs
+        # the same seed as the rest of the run — otherwise a seeded simulation
+        # would still vary between identical runs.
+        platform.use_rng(Random(seed))
+        self.simulator = simulator or Simulator(
+            seed, outcome_model if outcome_model is not None else TrueSkillOutcome()
+        )
         self.state = PlatformState()
         self.requests_per_step = requests_per_step
         self.seed = seed
