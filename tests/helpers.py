@@ -13,11 +13,17 @@ record that the platform now maintains for every player.
 
 from typing import Any
 
-from matchmakinglab.core.models import Player, PlayerStatus, Region
+from matchmakinglab.core.models import (
+    TRUE_SKILL_KEY,
+    Player,
+    PlayerStatus,
+    Region,
+)
 from matchmakinglab.matchmakers.bradley_terry.strategy import (
     BASE_SKILL_RATING,
     SKILL_RATING_KEY,
 )
+from matchmakinglab.platform.platform import MAX_TRUE_SKILL, MIN_TRUE_SKILL
 
 
 def make_player(
@@ -54,6 +60,7 @@ def make_skill_player(
     status: PlayerStatus = PlayerStatus.IDLE,
     wins: int = 0,
     loses: int = 0,
+    true_skill: int | None = None,
 ) -> Player:
     """Build a Player carrying a Bradley-Terry skill rating.
 
@@ -67,12 +74,24 @@ def make_skill_player(
 
     ``make_player`` is the right default everywhere else; a skill rating in a test
     that never touches rating logic just hides which behaviour is under test.
+
+    ``true_skill`` defaults to the midpoint of the platform's hidden-ability
+    range, which is what a deterministically-created player gets. Pass it
+    explicitly when the test needs a specific gap between a player's real
+    ability and the rating the strategy is estimating.
     """
     return make_player(
         player_id,
         username,
         region,
-        {SKILL_RATING_KEY: skill_rating},
+        {
+            SKILL_RATING_KEY: skill_rating,
+            TRUE_SKILL_KEY: (
+                (MIN_TRUE_SKILL + MAX_TRUE_SKILL) // 2
+                if true_skill is None
+                else true_skill
+            ),
+        },
         status,
         wins,
         loses,

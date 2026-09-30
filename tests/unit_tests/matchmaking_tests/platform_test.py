@@ -7,7 +7,10 @@ orchestration layer and the Simulator's match clock. These run headless and
 exercise the layers below the SimHarness boundary directly.
 """
 
+import random
+
 from matchmakinglab.core.models import (
+    TRUE_SKILL_KEY,
     ActiveMatch,
     FinishedMatch,
     MatchProposal,
@@ -17,7 +20,11 @@ from matchmakinglab.core.models import (
 )
 from matchmakinglab.core.state import PlatformState
 from matchmakinglab.matchmakers.bradley_terry.strategy import BradleyTerry
-from matchmakinglab.platform.platform import Platform
+from matchmakinglab.platform.platform import (
+    MAX_TRUE_SKILL,
+    MIN_TRUE_SKILL,
+    Platform,
+)
 from matchmakinglab.platform.simulator import Simulator, _simulate_match
 from tests.helpers import make_player
 
@@ -398,3 +405,107 @@ def test_simulate_match_preserves_teams():
     assert finished.match_length == 9
     assert finished.winning_team == [alice]
     assert finished.losing_team == [bob]
+
+
+# ---------- Hidden true skill ----------
+#
+# `true_skill` is the simulated player's real, hidden ability: drawn once at
+# creation, never updated, and the thing match outcomes are decided from. It is
+# what makes a matchmaker's estimate measurable at all — if outcomes were decided
+# from the estimate, the matchmaker would be graded against its own opinion.
+#
+# The platform owns this key rather than the strategy, because it models the
+# player and not any one matchmaking approach.
+
+
+def test_new_player_is_seeded_with_a_hidden_true_skill():
+    platform = Platform(BradleyTerry(), rng=random.Random(1))
+    state = PlatformState()
+
+    platform.add_to_matchmaking_queue("alice", _req_features(), state)
+
+    player = state.get_player("alice")
+    assert player is not None
+    assert TRUE_SKILL_KEY in player.player_features
+    assert MIN_TRUE_SKILL <= player.player_features[TRUE_SKILL_KEY] <= MAX_TRUE_SKILL
+
+
+def test_hidden_true_skill_does_not_replace_the_strategy_rating():
+    """The hidden value is additive — the strategy still seeds its own key."""
+    platform = Platform(BradleyTerry(), rng=random.Random(1))
+    state = PlatformState()
+
+    platform.add_to_matchmaking_queue("alice", _req_features(), state)
+
+    player = state.get_player("alice")
+    assert player is not None
+    assert player.player_features["skill_rating"] == 100
+    assert TRUE_SKILL_KEY in player.player_features
+
+
+def test_new_players_get_genuinely_different_true_skills():
+    """Guards against a degenerate all-equal population.
+
+    If every simulated player shared one ability there would be nothing for a
+    matchmaker to discover, and every approach would score identically. A silent
+    flattening like that would make the whole lab look broken in a way that is
+    easy to mistake for a matchmaking bug.
+    """
+    platform = Platform(BradleyTerry(), rng=random.Random(7))
+    state = PlatformState()
+
+    for i in range(40):
+        platform.add_to_matchmaking_queue(f"player_{i}", _req_features(), state)
+
+    values = {p.player_features[TRUE_SKILL_KEY] for p in state.player_database.values()}
+
+    assert len(values) > 1
+    # A healthy population uses most of the configured range rather than
+    # clustering on one or two values.
+    assert len(values) > 20
+
+
+def test_true_skill_is_drawn_once_and_never_changes_on_requeue():
+    platform = Platform(BradleyTerry(), rng=random.Random(1))
+    state = PlatformState()
+
+    platform.add_to_matchmaking_queue("alice", _req_features(), state)
+    player = state.get_player("alice")
+    assert player is not None
+    original = player.player_features[TRUE_SKILL_KEY]
+
+    platform.add_to_matchmaking_queue("alice", _req_features(), state)
+
+    assert player.player_features[TRUE_SKILL_KEY] == original
+
+
+def test_platform_without_an_rng_stays_deterministic():
+    """The default `Platform(BradleyTerry())` shape must keep working.
+
+    Many tests construct the platform with no rng because they are asserting on
+    matchmaking mechanics, not on simulated player quality. A platform that
+    raised or required a seeded rng would break all of them.
+    """
+    platform = Platform(BradleyTerry())
+    state = PlatformState()
+
+    for i in range(5):
+        platform.add_to_matchmaking_queue(f"player_{i}", _req_features(), state)
+
+    values = {p.player_features[TRUE_SKILL_KEY] for p in state.player_database.values()}
+    assert len(values) == 1
+
+
+def test_seeded_rng_produces_reproducible_true_skills():
+    def draw(seed: int) -> list[int]:
+        platform = Platform(BradleyTerry(), rng=random.Random(seed))
+        state = PlatformState()
+        for i in range(10):
+            platform.add_to_matchmaking_queue(f"player_{i}", _req_features(), state)
+        return [
+            p.player_features[TRUE_SKILL_KEY]
+            for _, p in sorted(state.player_database.items())
+        ]
+
+    assert draw(42) == draw(42)
+    assert draw(42) != draw(43)

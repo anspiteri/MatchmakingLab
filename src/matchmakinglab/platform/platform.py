@@ -1,7 +1,9 @@
+from random import Random
 from typing import Any
 
 from matchmakinglab.core.models import (
     REGION_KEY,
+    TRUE_SKILL_KEY,
     ActiveMatch,
     FinishedMatch,
     MatchProposal,
@@ -13,11 +15,20 @@ from matchmakinglab.core.models import (
 from matchmakinglab.core.state import PlatformState
 from matchmakinglab.matchmakers import MatchmakingStrategy
 
+# Bounds for a simulated player's real, hidden ability. Deliberately wider than
+# the strategy's base rating (100) and centred on it, so a population starts out
+# genuinely heterogeneous. A narrow or near-uniform population would leave the
+# matcher with nothing to discover, and every approach would then look
+# identical — see docs/matchmaking-implementations.md.
+MIN_TRUE_SKILL = 40
+MAX_TRUE_SKILL = 160
+
 
 class Platform:
-    def __init__(self, strategy: MatchmakingStrategy):
+    def __init__(self, strategy: MatchmakingStrategy, rng: Random | None = None):
         self._id_count = 0
         self.strategy = strategy
+        self._rng = rng
 
     def add_to_matchmaking_queue(
         self, username: str, req_features: dict[str, Any], state: PlatformState
@@ -31,6 +42,7 @@ class Platform:
                 region = Region.OCEANIA
 
             player_features: dict[str, Any] = self.strategy.setup_player_features()
+            player_features[TRUE_SKILL_KEY] = self._draw_true_skill()
             player = state.add_player(
                 Player(self._id_count, username, 0, 0, region, player_features)
             )
@@ -39,6 +51,24 @@ class Platform:
 
         player.status = PlayerStatus.QUEUING
         state.enqueue_match_req(MatchRequest(player, req_features))
+
+    def _draw_true_skill(self) -> int:
+        """Draw a hidden real ability for a newly created player.
+
+        The platform owns this value rather than the strategy: it models the
+        player, not any particular matchmaking approach. It is drawn once at
+        creation and never updated, which is what lets the simulation score a
+        matchmaker's estimates against an independent truth.
+
+        Without an ``rng`` the platform stays fully deterministic and every
+        player shares the midpoint, which is the right behaviour for the many
+        unit tests that construct ``Platform(BradleyTerry())`` directly — they
+        are asserting on matchmaking mechanics, not on simulated player quality.
+        """
+        if self._rng is None:
+            return (MIN_TRUE_SKILL + MAX_TRUE_SKILL) // 2
+
+        return self._rng.randint(MIN_TRUE_SKILL, MAX_TRUE_SKILL)
 
     def match_players(
         self,

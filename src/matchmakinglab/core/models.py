@@ -4,6 +4,7 @@ from typing import Any
 
 LATENCY_KEY = "latency"
 REGION_KEY = "region"
+TRUE_SKILL_KEY = "true_skill"
 
 
 @unique
@@ -27,18 +28,30 @@ class PlayerStatus(Enum):
 class Player:
     """A single human account on the platform.
 
-    ``player_features`` is a strategy-owned bag of attributes. The core model
-    treats it as opaque: it defaults to empty and the platform does not populate
-    it. The active matchmaker decides both the keys it writes and the keys it
-    expects back, seeding them on creation via its own setup hook.
+    ``player_features`` is a bag of attributes with two distinct kinds of owner.
 
-    Consequently any code reading a strategy-specific key must tolerate its
-    absence — use ``dict.get`` and validate, rather than subscripting — otherwise
-    a player that was not created by that strategy's platform (a hand-built
-    fixture, another matchmaker's leftover state) raises ``KeyError`` or silently
-    models an unrated player. ``tests.helpers.make_player`` deliberately leaves
-    the bag empty for that reason; use ``make_skill_player`` when a test needs a
-    seeded database.
+    Strategy-owned keys (e.g. ``skill_rating``) are written by the active
+    matchmaker: it decides both the keys it writes and the keys it expects back,
+    seeding them on creation via its own ``setup_player_features`` hook. Any code
+    reading a strategy-specific key must tolerate its absence — use ``dict.get``
+    and validate, rather than subscripting — otherwise a player that was not
+    created by that strategy's platform (a hand-built fixture, another
+    matchmaker's leftover state) raises ``KeyError`` or silently models an
+    unrated player. ``tests.helpers.make_player`` deliberately leaves the bag
+    empty for that reason; use ``make_skill_player`` when a test needs a seeded
+    database.
+
+    Platform-owned keys are seeded by the platform itself on creation.
+    ``TRUE_SKILL_KEY`` is the only one so far: the simulated player's real,
+    hidden ability. It is deliberately *not* strategy-owned, because it is a
+    property of the player rather than of any one matchmaking approach — the
+    next approach needs it just as much as this one. Match outcomes are decided
+    from it, while a strategy's estimate (``skill_rating``) is what matchmaking
+    actually reasons about. Keeping the two separate is what makes the rating
+    system measurable: if outcomes were decided from the estimate, a matchmaker
+    would be graded against its own opinion of the world. Nothing but the
+    platform's creation path ever writes this key, and it never changes
+    afterwards.
     """
 
     id: int
