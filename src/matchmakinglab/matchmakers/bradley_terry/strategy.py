@@ -19,7 +19,19 @@ SKILL_RATING_KEY = "skill_rating"
 
 # --- WEIGHTS ---
 # Assumed to be positive scalars
-LEARNING_RATE = 10
+#
+# Step size for the rating update, against a base rating of 100. Halved from 10
+# after measuring the real simulation: at 10 the rating scale inflated well past
+# the spread of the population it was tracking. Over 600 ticks with hidden skill
+# spread 40-160, a rate of 10 left estimates spanning 9-192 (1.5x the true width)
+# while 5 left them at 48-142 — close to the true range, and at the same time
+# measuring the same correlation between estimate and truth (0.836 vs 0.843).
+#
+# The inflation is a property of ratio space rather than of this constant: the
+# update has no restoring force that catches up as ratings separate, so the walk
+# spreads to fill whatever room the rate allows. See
+# docs/matchmaking-implementations.md before raising this again.
+LEARNING_RATE = 5
 
 BASE_SKILL_RATING = 100
 

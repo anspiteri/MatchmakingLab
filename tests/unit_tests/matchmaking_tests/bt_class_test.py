@@ -14,6 +14,7 @@ import pytest
 
 from matchmakinglab.core.models import (
     REGION_KEY,
+    TRUE_SKILL_KEY,
     ActiveMatch,
     FinishedMatch,
     MatchRequest,
@@ -67,16 +68,16 @@ def test_setup_player_features(candidate_generation_method, optimisation_method)
 @pytest.mark.parametrize(
     "winner_skill, loser_skill, expected_winner_after, expected_loser_after",
     [
-        # Equal skill — 50/50 probability, adjustment = 5
-        (100, 100, 105, 95),
-        # Winner stronger — probability = 0.6, adjustment = 4
-        (150, 100, 154, 96),
-        # Underdog wins — probability = 0.4, adjustment = 6
-        (100, 150, 106, 144),
+        # Equal skill — 50/50 probability, adjustment = 2 at LEARNING_RATE 5
+        (100, 100, 102, 98),
+        # Winner stronger — probability = 0.6, adjustment = 2
+        (150, 100, 152, 98),
+        # Underdog wins — probability = 0.4, adjustment = 3
+        (100, 150, 103, 147),
         # Loser floor at 1 — loser goes clearly negative
-        (4, 1, 6, 1),
+        (4, 1, 5, 1),
         # No floor — loser survives with small positive skill
-        (9, 2, 11, 1),
+        (9, 2, 10, 1),
     ],
 )
 def test_update_player_features(
@@ -242,3 +243,69 @@ def test_run_algorithm_raises_for_undefined_candidate_generation_method():
         match="No implementation for candidate generation method",
     ):
         bt_instance.run_algorithm([request])
+
+
+# ---------- Does the simulation actually produce learnable signal? ----------
+#
+# The rating update is only worth having if it converges on something. With the
+# hidden skill seeded at creation and match outcomes drawn from it, that
+# something is measurable: a matchmaker's estimate should come to track a
+# player's real ability. These are the "intuition tests" the project diary
+# asks for — they check the property the whole lab rests on, rather than the
+# arithmetic of any one function.
+
+
+def _pearson(xs: list[float], ys: list[float]) -> float:
+    n = len(xs)
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+    covariance = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    spread_x = sum((x - mean_x) ** 2 for x in xs) ** 0.5
+    spread_y = sum((y - mean_y) ** 2 for y in ys) ** 0.5
+    if spread_x == 0 or spread_y == 0:
+        return 0.0
+    return covariance / (spread_x * spread_y)
+
+
+def _run_until_ratings_track_truth(ticks: int, seed: int = 1) -> float:
+    from matchmakinglab.matchmakers.bradley_terry import generator as gen
+    from matchmakinglab.platform.platform import Platform
+    from matchmakinglab.platform.sim_harness import SimHarness
+
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(player_count=150, seed=seed),
+        Platform(BradleyTerry()),
+        requests_per_step=10,
+        seed=seed,
+    )
+    for _ in range(ticks):
+        harness.step()
+
+    played = [p for p in harness.state.player_database.values() if p.wins + p.loses > 0]
+    assert len(played) > 20, "the run produced too few played players to judge"
+
+    return _pearson(
+        [float(p.player_features[SKILL_RATING_KEY]) for p in played],
+        [float(p.player_features[TRUE_SKILL_KEY]) for p in played],
+    )
+
+
+def test_ratings_learn_to_track_hidden_skill():
+    """The core intuition: estimates converge on the truth they never see.
+
+    This is the check that the simulator is doing its job. Outcomes are decided
+    from `true_skill` while the strategy only ever reads its own `skill_rating`,
+    so correlation between the two can only appear if the rating update is
+    genuinely learning. A flat or negative result means results are not carrying
+    usable signal, and every downstream metric would be noise.
+    """
+    assert _run_until_ratings_track_truth(600) > 0.7
+
+
+def test_rating_learning_is_reproducible_under_a_seed():
+    """Same seed, same learning outcome — a diagnostic you cannot repeat is no use."""
+
+    def run(seed: int) -> float:
+        return _run_until_ratings_track_truth(600, seed=seed)
+
+    assert run(1) == run(1)
