@@ -65,7 +65,14 @@ The `Platform` is the single generalisable harness that runs a strategy against 
   2. updates player features from finished matches,
   3. increments the wait time of still-queued requests.
 
-The `Simulator` advances the clock of each active match and moves finished ones into the finished list, producing a `FinishedMatch` (currently a placeholder win/lose assignment). Both `Platform` and `Simulator` remain strategy-agnostic; all approach-specific logic lives in the strategy.
+The `Simulator` plays out each active match one round per tick and moves finished ones into the finished list. Each round is decided by a **match outcome model** (`platform/outcome.py`) — an injectable object that returns the probability a given team wins a round, given the teams and an rng:
+
+- `TrueSkillOutcome` (the default) decides from each player's hidden `true_skill`. This is the honest model: results follow real ability, so a good matchmaker can be measured against it.
+- `RatingOutcome` decides from `skill_rating`, i.e. from the matchmaker's own current estimate.
+
+Two implementations of the same interface, differing only in what they read, make it cheap to ask what a matchmaker would do if it were right. The simulator also runs the race — each tick plays a round, awards the point, and finishes the match when a side reaches `POINTS_TO_WIN` (3). With one point per round some side always gets there first, so match length is bounded at 5 rounds by the arithmetic and needs no duration cap, and there is no draw to represent.
+
+Both `Platform` and `Simulator` remain strategy-agnostic; all approach-specific logic lives in the strategy. The hidden truth and the outcome model are both simulation-side concerns, deliberately placed so the strategy cannot see either.
 
 ## UI: `ui/`
 
@@ -81,7 +88,7 @@ A tick timer (interval `BASE_TICK_SECONDS / speed`) drives `harness.step()`; the
 
 ## State & Models: `core/`
 
-- `models.py` — the shared data models: `Player`, `MatchRequest`, `ActiveMatch`, and `FinishedMatch`, plus feature keys (e.g. latency, region) and the `Region` enum.
+- `models.py` — the shared data models: `Player`, `MatchRequest`, `ActiveMatch`, and `FinishedMatch`, plus feature keys (e.g. latency, region, and `TRUE_SKILL_KEY`) and the `Region` enum. `ActiveMatch` carries the running `score_A`/`score_B`; `Player` carries both the estimated `skill_rating` the strategy reads and the hidden `true_skill` it never sees.
 - `state.py` — `PlatformState`, a runtime container holding the player database, the matchmaking queue, and active/finished matches. It is shared between the platform and the harness.
 - `snapshot.py` — `SimSnapshot`, the read-only view of one sim step handed to the display layer.
 

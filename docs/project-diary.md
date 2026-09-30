@@ -33,6 +33,23 @@ Future
 * think about adjusting the BT skill-rating system to be log-likelihood based (26/08/2026)
 
 ## Log
+30/09/2026
+Made matches actually depend on player skill, which turned out to be the precondition for measuring anything (branch `dev/match-simulation`, 4 commits):
+
+- Gave every simulated player a hidden `true_skill` (uniform 40-160), drawn from the platform's rng at creation and never read by the strategy. The strategy keeps its own `skill_rating` starting at 100. This gives the lab a ground truth to score estimates against.
+- Added a `MatchOutcomeModel` interface with two implementations: `TrueSkillOutcome` (honest — results follow real ability) and `RatingOutcome` (circular — results follow the matchmaker's estimate). Two implementations of one interface differing only in what they read make it cheap to ask what a matchmaker would do if it were right.
+- Rewrote the simulator, which had been crediting whichever side happened to be listed first. Each tick now plays a round decided by the outcome model, and the match ends when a side reaches 3 points. Consequences worth noting: match length becomes an *output* (measured 4.05 average, bounded 3-5) rather than an independently chosen number, so it is finally worth reading; the duration thresholds are gone because the arithmetic already bounds the race; and with no draws possible there is no draw state for the rating update to handle.
+- Halved `LEARNING_RATE` from 10 to 5, measured rather than guessed — see `docs/matchmaking-implementations.md` for the writeup and the numbers.
+
+The measurement work turned up a result I did not expect. The rating update does learn: estimated ratings correlate with hidden truth at 0.843. But the rating *scale* inflates as the run goes on, because the update has no restoring force that catches up as ratings separate, and its step is proportional to the rating itself. The spread of estimates drifts past the spread of the population it is estimating, and where it stops is decided by the learning rate rather than by the real players. Halving the rate is a mitigation, not a fix — 1.5x over-dispersion remains at 2000 ticks. The real correction is to update `log(rating)` instead, which is left as known future work since it means re-deriving the update and the reported scale together.
+
+Deliberately deferred:
+- **Log-space ratings.** The structural fix for the above. Not blocking — the lab produces meaningful results while this is a documented distortion, but it should land before rating numbers are compared across approaches.
+- **Per-round probability calibration.** `RatingOutcome` currently applies the Bradley-Terry function to a single round, but a round is not a whole match and the per-round probability is not the per-match probability a real player would expect. Guessing a mapping here would be worse than leaving it visibly naive.
+- **A loose dispersion guard** — actually landed, in `bt_class_test.py`. Deliberately loose: a smoke alarm for the inflation becoming qualitatively worse, not a pin on today's numbers. Verified it fires on a real regression (learning rate 40 → 2.65x against a 2.5x bound) and passes with room to spare at the current configuration (0.93x).
+
+A caution worth recording: my first attempt at that guard tested the wrong thing. I broke the update to a skill-independent step, expecting correlation with truth to collapse — it did not, because a constant step still accumulates win differential and win differential tracks ability. That variant really does learn. A test only means something once you have watched it fail; the frozen-update control (correlation 0.0) is the one that proves the assertion bites.
+
 09/09/2026
 Migrated the display layer from a planned Rich-based live display to a full Textual TUI, and landed the display part of the vertical slice:
 
