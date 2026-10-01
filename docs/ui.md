@@ -58,6 +58,24 @@ Every panel is populated from the snapshot the harness produces, never from
 `PlatformState`. That is what keeps the UI replaceable — a different simulation
 emitting the same snapshot renders the same app.
 
+## Sim time and request rate
+
+Two figures on screen are wall-clock, and both are worth reading precisely.
+
+`Sim time` is how long the run has actually been going. It does not care how
+fast the simulation is being ticked: at 8x a run reaches a given tick count
+sooner, but both runs have still been going for the same number of real seconds,
+and a run left overnight reads however long it was left for. It stops while
+paused, so time spent looking at the numbers is not counted as time spent
+producing them.
+
+`Request rate` is average arrivals per real second over the run so far. It does
+move with the speed multiplier, which is the point — at 8x the run really is
+absorbing more requests each real second. With the default 10:50 per-tick
+arrival range it settles near 150/s at 1x. It is a throughput figure, not a
+measure of the matchmaking: nothing about the quality of the matches shows up
+in it.
+
 ## Leaderboard
 
 - Ranked by estimated rating, descending. Ties break on wins (descending) then

@@ -179,6 +179,10 @@ class MatchmakingLabApp(App):
                 self._timer.pause()
             else:
                 self._timer.resume()
+        # Stopping the tick timer is not enough on its own: the harness measures
+        # run time off its own clock and cannot see the pause, so without this a
+        # pause is banked into the next snapshot as though the run had continued.
+        self.harness.set_paused(self.paused)
         self._set_status()
 
     def action_speed_up(self) -> None:

@@ -8,6 +8,7 @@ panels and key bindings all work together, without needing a real terminal.
 
 import asyncio
 
+import pytest
 from textual.widgets import DataTable
 
 from matchmakinglab.matchmakers.bradley_terry import generator as gen
@@ -109,6 +110,47 @@ def test_reacts_to_speed_and_pause_bindings():
     assert speed_after_j == 0.5
     assert speed_after_k == 1.0
     assert paused is True
+
+
+def test_pausing_through_the_keyboard_stops_the_run_clock():
+    """The spacebar must stop the harness clock, not just the tick timer.
+
+    The harness measures run time off its own clock and cannot see the app's
+    pause, so `action_toggle_pause` has to report it. Without that the timer
+    stops but the clock does not: no steps land while paused, so the entire pause
+    is banked into the next step's gap and shows up as simulated time.
+    """
+
+    async def scenario():
+        app = _make_app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.3)
+            running = app.harness._elapsed_seconds()
+
+            await pilot.press("space")
+            await pilot.pause(0.3)
+            assert app.paused is True
+            frozen = app.harness._elapsed_seconds()
+
+            # Wait while paused; the clock must not have moved.
+            await pilot.pause(0.5)
+            still_frozen = app.harness._elapsed_seconds()
+
+            await pilot.press("space")
+            await pilot.pause(0.3)
+            resumed = app.harness._elapsed_seconds()
+
+            app.exit()
+            await pilot.pause()
+            return running, frozen, still_frozen, resumed
+
+    running, frozen, still_frozen, resumed = asyncio.run(scenario())
+
+    assert running > 0.0, "the clock never started"
+    assert frozen > 0.0
+    # The pause contributes nothing, and the wall clock really did move on.
+    assert still_frozen == pytest.approx(frozen)
+    assert resumed > still_frozen
 
 
 def test_speed_is_clamped_to_bounds():

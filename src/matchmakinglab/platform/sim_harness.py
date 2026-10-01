@@ -114,8 +114,22 @@ class SimHarness:
         # comparable as the request range is varied.
         self._request_rng = Random(seed) if seed is None else Random(seed + 1)
 
-        self._last_time: float | None = None
-        self._sim_seconds = 0.0
+        # Wall-clock run time, as opposed to time spent inside step(). The gap
+        # between two steps is the same quantity for a run that has been going
+        # all night as for one that has just started, and the speed multiplier
+        # does not enter into it — running at 8x means more ticks inside the same
+        # elapsed time, which is exactly what happened.
+        #
+        # Started on the first step rather than at construction, so the first
+        # snapshot reports 0.0s and a rate of 0.0 rather than dividing a handful
+        # of requests by the few microseconds spent booting.
+        self._run_started: float | None = None
+        # Set while paused, cleared on resume; `_paused_seconds` accumulates the
+        # spans that have already ended. A pause is not a gap in the record, it
+        # is time the simulation was deliberately not running, so it must not
+        # reach the run-time total.
+        self._paused_at: float | None = None
+        self._paused_seconds = 0.0
         self._tick = 0
         self._total_requests = 0
 
@@ -130,6 +144,43 @@ class SimHarness:
         self._favourite_wins = 0
 
         self._last_snapshot: SimSnapshot | None = None
+
+    def set_paused(self, paused: bool) -> None:
+        """Start or stop the run clock, for a caller that pauses the simulation.
+
+        The harness cannot see the app's own pause, so the app reports it here.
+        Idempotent, because the two states are not independent calls: a second
+        `True` must not bank the span twice, and neither may a `False` that
+        arrives while already running.
+
+        Called by the TUI on pause and resume. A headless run never pauses, so it
+        never calls this and the clock simply runs from the first step.
+        """
+        self._start_clock()
+        if paused:
+            if self._paused_at is None:
+                self._paused_at = self._clock()
+        elif self._paused_at is not None:
+            self._paused_seconds += self._clock() - self._paused_at
+            self._paused_at = None
+
+    def _start_clock(self) -> None:
+        if self._run_started is None:
+            self._run_started = self._clock()
+
+    def _elapsed_seconds(self) -> float:
+        """Real seconds this run has been going, excluding paused time.
+
+        The span from the first step to now contains any pauses that happened
+        inside it, so the completed pause time is subtracted rather than added.
+        Frozen at the moment of the pause while one is in effect, so a snapshot
+        taken during a pause reports the run time as it stood when the pause
+        began rather than drifting with the wall clock.
+        """
+        if self._run_started is None:
+            return 0.0
+        end = self._paused_at if self._paused_at is not None else self._clock()
+        return (end - self._run_started) - self._paused_seconds
 
     def _record_match_quality(self, newly_finished: list[FinishedMatch]) -> None:
         """Fold newly finished matches into the favourite win rate.
@@ -341,10 +392,8 @@ class SimHarness:
 
         rating_accuracy, rating_spread, true_skill_spread = self._player_quality()
 
-        now = self._clock()
-        if self._last_time is not None:
-            self._sim_seconds += now - self._last_time
-        self._last_time = now
+        self._start_clock()
+        sim_seconds = self._elapsed_seconds()
 
         self._tick += 1
 
@@ -354,9 +403,14 @@ class SimHarness:
             queue=[r.player.username for r in self.state.get_matchmaking_queue()],
             active_matches=len(self.state.get_active_games()),
             finished_matches=len(self.state.get_finished_matches()),
-            sim_seconds=self._sim_seconds,
-            request_rate=round(self._total_requests / self._sim_seconds, 1)
-            if self._sim_seconds > 0
+            sim_seconds=sim_seconds,
+            # Average arrivals per real second over the whole run so far. The
+            # same average the panel has always claimed to show, now over a
+            # clock that means what it says: at 1x with a 10:50 arrival range
+            # this settles near 150/s, and at 8x it rises because the run really
+            # is putting more requests through each real second.
+            request_rate=round(self._total_requests / sim_seconds, 1)
+            if sim_seconds > 0
             else 0.0,
             avg_wait=avg_wait_time,
             avg_match_len=avg_match_length,

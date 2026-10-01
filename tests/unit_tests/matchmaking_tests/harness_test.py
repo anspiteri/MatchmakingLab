@@ -158,27 +158,151 @@ def test_same_seed_produces_identical_queue():
     assert [req.req_features for req in first] == [req.req_features for req in second]
 
 
+class SettableClock:
+    """A clock the test moves by hand, so elapsed time is stated not waited for.
+
+    Deliberately not one that advances on every call: the harness reads the clock
+    more than once per step now, so a self-advancing clock would make the
+    arithmetic depend on how many times it happened to be read.
+    """
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
 def test_sim_seconds_and_request_rate_track_fake_clock():
-    class FakeClock:
-        def __init__(self):
-            self._value = 0.0
+    """Run time is real elapsed time, and the rate is arrivals over it.
 
-        def __call__(self):
-            self._value += 1.0
-            return self._value
-
+    Ten requests a tick with a fifth of a second between ticks is fifty a
+    second, which is the figure the panel has always claimed to show.
+    """
+    clock = SettableClock()
     harness = SimHarness(
         gen.BradleyTerryGenerator(),
         Platform(BradleyTerry()),
         requests_per_step=10,
-        clock=FakeClock(),
+        clock=clock,
     )
 
-    harness.step()  # sim_seconds stays 0 on the first step
+    clock.advance(0.2)
+    first = harness.step()  # run time starts at the first step, so this is 0.0
+    assert first.sim_seconds == 0.0
+    assert first.request_rate == 0.0
+
+    clock.advance(0.2)
     snapshot = harness.step()
 
-    assert snapshot.sim_seconds == 1.0
-    assert snapshot.request_rate == 20.0
+    assert snapshot.sim_seconds == pytest.approx(0.2)
+    # 20 requests over 0.2s.
+    assert snapshot.request_rate == 100.0
+
+
+def test_pausing_stops_the_run_clock():
+    """A pause is time the simulation was not running, so it is not run time.
+
+    The bug this pins: the clock used to be the gap between steps, and the last
+    time it was read was inside step(). A pause produces no steps, so the whole
+    pause landed in the next tick's gap — a minute of thinking about the numbers
+    read as a minute of simulation, and dragged the request rate down with it.
+    """
+    clock = SettableClock()
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(),
+        Platform(BradleyTerry()),
+        requests_per_step=10,
+        clock=clock,
+    )
+
+    for _ in range(3):
+        clock.advance(0.2)
+        harness.step()
+    assert harness._elapsed_seconds() == pytest.approx(0.4)
+
+    harness.set_paused(True)
+    clock.advance(3600.0)  # an hour of the operator doing something else
+    assert harness._elapsed_seconds() == pytest.approx(0.4)
+
+    harness.set_paused(False)
+    clock.advance(0.2)
+    resumed = harness.step()
+    assert resumed.sim_seconds == pytest.approx(0.6)
+    # 40 requests over 0.6s — the pause did not dilute the rate either.
+    assert resumed.request_rate == pytest.approx(66.7, abs=0.05)
+
+
+def test_pause_and_resume_are_idempotent():
+    """The two states are not independent calls, so repeats must not double count.
+
+    An app that reports a pause it is already in, or resumes one that has
+    already ended, would otherwise bank the same span twice.
+    """
+    clock = SettableClock()
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(),
+        Platform(BradleyTerry()),
+        requests_per_step=10,
+        clock=clock,
+    )
+
+    clock.advance(0.2)
+    harness.step()  # the run clock starts here
+
+    harness.set_paused(True)
+    clock.advance(30.0)
+    harness.set_paused(True)  # reported again, 30s later, still paused
+    clock.advance(30.0)
+    harness.set_paused(False)
+    harness.set_paused(False)  # reported again, already running
+
+    clock.advance(0.2)
+    snapshot = harness.step()
+
+    # One tick's worth of running, not three. The 60s of pause contributes
+    # nothing, and a repeat pause part-way through it does not quietly start
+    # counting the time since the first report as running time.
+    assert snapshot.sim_seconds == pytest.approx(0.2)
+
+
+def test_run_time_does_not_depend_on_the_tick_interval():
+    """The speed multiplier must not change how long the run has been going.
+
+    Run time is wall clock, so the only thing a faster tick rate changes is how
+    many ticks fit inside it. Driving the same wall-clock span at two different
+    intervals has to give the same run time, and a proportionally higher rate.
+    """
+    clock = SettableClock()
+
+    def run(interval: float, ticks: int) -> SimSnapshot:
+        harness = SimHarness(
+            gen.BradleyTerryGenerator(),
+            Platform(BradleyTerry()),
+            requests_per_step=10,
+            clock=clock,
+        )
+        clock.now = 0.0
+        taken = []
+        for _ in range(ticks):
+            clock.advance(interval)
+            taken.append(harness.step())
+        return taken[-1]
+
+    slow = run(0.2, 11)  # 11 ticks, ending 2.0s after the first
+    clock.now = 0.0
+    fast = run(0.025, 81)  # 81 ticks, ending 2.0s after the first
+
+    assert slow.sim_seconds == pytest.approx(2.0)
+    assert fast.sim_seconds == pytest.approx(2.0)
+    # Same run time, very different throughput: 110 requests over 2.0s against
+    # 810. Not exactly 8x because each run's clock starts on its own first tick,
+    # so the faster run has 81 requests-batches to the slower one's 11.
+    assert slow.request_rate == 55.0
+    assert fast.request_rate == 405.0
 
 
 def test_ratings_updated_once_per_finished_match():

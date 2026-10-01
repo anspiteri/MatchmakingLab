@@ -42,8 +42,17 @@ Both options are cross-validated at startup rather than per tick: the widest arr
 The `SimHarness` is the single point of contact between the simulation and the display layer. It **owns** the full runtime composition — `RequestGenerator`, `Platform`, `Simulator`, and `PlatformState` — so the UI never reaches into sim internals. It exposes:
 
 - `step() -> SimSnapshot` — advance one tick (generate → enqueue → `platform.tick` → simulate) and return a read-only snapshot.
+- `set_paused(paused: bool)` — start or stop the run clock. The TUI calls this on pause and resume; a headless run never does.
 - `SimSnapshot` (`core/snapshot.py`) — a plain dataclass with derived facts only (queue/active/finished counts, tick, wall-clock sim seconds, request rate, a list of feed event lines, and a ranked top-100 `leaderboard`).
 - `last_snapshot` — the most recent `SimSnapshot`, kept so a caller holding the harness can read back the newest tick without taking a second one and perturbing the run.
+
+### The two clocks
+
+`sim_seconds` is real wall-clock run time: how long the simulation has actually been going. It deliberately does not depend on how fast it is being ticked, so a run left going overnight reads however long it was left for, and the speed multiplier only changes how many ticks fit inside that span. It excludes paused time, and the clock starts on the first `step()` so a freshly booted run reads `0.0` rather than its own startup cost.
+
+Excluding pauses needs the app to say so — the harness cannot see the TUI's own pause, and a pause produces no steps, so measuring the gap between steps would bank the entire pause into the next tick. `set_paused` exists for that and is idempotent, because a caller reporting a state it is already in must not count the span twice.
+
+`request_rate` is average arrivals per real second over the run so far: total requests divided by `sim_seconds`. It is a genuine throughput figure and moves with the speed multiplier, which is correct — at 8x the run really is putting more requests through each real second. Note what it is *not*: a property of the matchmaking. With a 10:50 arrival range it settles near 150/s at 1x, and the same run on a faster machine with the same tick interval reports the same number, because the rate is per real second rather than per tick.
 
 ### Leaderboard
 
