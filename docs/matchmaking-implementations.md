@@ -124,7 +124,10 @@ things here that can tell you a matchmaker is doing badly:
   players, which is the form the over-dispersion above is measured in. Watching
   the left number start below the right one and then climb toward it is watching
   the estimate converge on the truth. It passes parity around 2000 ticks at the
-  current rate, which is the visible form of the fix above.
+  current rate, which is the visible form of the fix above. Where parity lands
+  depends on the load: this is measured in matches played, so a run given more
+  requests per tick converges sooner in tick terms (see the table under the
+  calibration tests).
 
 Two ordering details are load-bearing, and both are pinned by tests in
 `tests/unit_tests/matchmaking_tests/harness_test.py`:
@@ -160,6 +163,30 @@ first time a legitimate change moved them, and would then get deleted rather tha
 fixed. It sits at 1.5x, just under the 1.52x the additive rule measured at the
 same seed and tick count, so reinstating that rule trips it. The current rate
 measures 0.98-1.12x across five seeds, so there is real headroom above it.
+
+**The tripwire's scope is one configuration, not all of them.** Every figure
+above is 150 players with a fixed 10 requests per tick. Since the update became
+a random walk in accumulated noise, the spread to compare against is
+√(matches played per player), and that quantity is a property of the *load*, not
+of the tick count — measured across 60 to 1500 players, arrival ranges from
+10:50 to 40:120, and up to 4000 ticks, the ratio of estimated spread to
+√(matches) sits between 0.08 and 0.11 throughout. So the same rule drifts
+further the harder the run is worked:
+
+| Configuration (seed 1) | matches per player | estimated spread |
+|---|---|---|
+| 150 players, fixed 10/tick, 2000 ticks | 119 | 1.03x |
+| 500 players, 10:50/tick, 2000 ticks | 119 | 1.12x |
+| 500 players, 10:50/tick, 4000 ticks | 241 | 1.64x |
+| 500 players, 40:120/tick, 2000 ticks | 318 | 1.56x |
+| 1500 players, 40:120/tick, 4000 ticks | 214 | 1.35x |
+
+Nothing in that table is a regression: the walk is scaling as √(matches) says it
+should, which is the strongest confirmation the random-walk explanation of the
+residual drift is the right one. But it does mean a long or heavily loaded run
+reaches 1.5x without anything being wrong, and the tripwire should be read as
+guarding the configuration it was measured at. Loosening the bound would hide
+that rather than fix it — the fix is damping the walk itself, which is open work.
 
 Both were checked by deliberately breaking the update: reinstating the additive
 rule fails the conservation test and the tripwire together, while raising

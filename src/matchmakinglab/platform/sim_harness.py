@@ -30,6 +30,27 @@ def _fmt_team(team: list[Player]) -> str:
     return " & ".join(p.username for p in team)
 
 
+# How many requests arrive per tick, as an inclusive range. Wider than a fixed
+# rate on purpose, so the per-player match load varies over a run rather than
+# arriving on a metronome. Measured caveat: the greedy matcher drains whatever
+# it is given within the tick, so this varies *load* and not queue depth — the
+# queue still sits near empty. See docs/architecture.md.
+DEFAULT_REQUEST_RANGE = (10, 50)
+
+
+def _validate_request_range(request_range: tuple[int, int]) -> tuple[int, int]:
+    """Check an arrival range, returning it unchanged.
+
+    Inclusive on both ends, so ``(10, 50)`` can draw any of 41 counts.
+    """
+    low, high = request_range
+    if low < 1:
+        raise ValueError(f"Request range minimum must be at least 1, got {low}")
+    if high < low:
+        raise ValueError(f"Request range maximum {high} is below its minimum {low}")
+    return low, high
+
+
 class SimHarness:
     """Owns the full composition of the simulation run.
 
@@ -44,10 +65,11 @@ class SimHarness:
         generator: RequestGenerator,
         platform: Platform,
         simulator: Simulator | None = None,
-        requests_per_step: int = 10,
+        requests_per_step: int | None = None,
         seed: int | None = None,
         clock: Callable[[], float] = _clock,
         outcome_model: MatchOutcomeModel | None = None,
+        request_range: tuple[int, int] = DEFAULT_REQUEST_RANGE,
     ) -> None:
         self.generator = generator
         self.platform = platform
@@ -55,13 +77,27 @@ class SimHarness:
         # the same seed as the rest of the run — otherwise a seeded simulation
         # would still vary between identical runs.
         platform.use_rng(Random(seed))
+        # The generator draws who queues and what their latency and region are.
+        # Seeding it here too is what makes --seed actually reproducible: without
+        # this a run still varied between invocations given the same seed, because
+        # the generator was the one component building itself an unseeded Random.
+        generator.use_rng(Random(seed))
         self.simulator = simulator or Simulator(
             seed, outcome_model if outcome_model is not None else TrueSkillOutcome()
         )
         self.state = PlatformState()
+        # An explicit requests_per_step pins arrivals to a fixed count; otherwise
+        # each tick draws from request_range. Fixed arrivals are what most tests
+        # want, and --requests N:N reaches the same behaviour from the CLI.
         self.requests_per_step = requests_per_step
+        self.request_range = _validate_request_range(request_range)
         self.seed = seed
         self._clock = clock
+        # Arrival counts draw from their own stream rather than the seed itself,
+        # so introducing an arrival rate does not shift the draws the platform and
+        # simulator already make — a run's player abilities and match outcomes stay
+        # comparable as the request range is varied.
+        self._request_rng = Random(seed) if seed is None else Random(seed + 1)
 
         self._last_time: float | None = None
         self._sim_seconds = 0.0
@@ -145,12 +181,25 @@ class SimHarness:
             max(truths) - min(truths),
         )
 
+    def _requests_this_tick(self) -> int:
+        """How many requests arrive this tick.
+
+        Drawn here rather than in the generator: arrival rate is a property of
+        the simulated world rather than of any one matchmaker, so every strategy
+        gets it without its generator knowing, and generate_requests stays
+        honest about its "give me exactly this many" contract.
+        """
+        if self.requests_per_step is not None:
+            return self.requests_per_step
+        low, high = self.request_range
+        return self._request_rng.randint(low, high)
+
     def step(self) -> SimSnapshot:
         """Advance the simulation one tick and return a snapshot of the result."""
         events: list[str] = []
 
         new_requests = self.generator.generate_requests(
-            self.requests_per_step, self.state.player_database
+            self._requests_this_tick(), self.state.player_database
         )
         self._total_requests += len(new_requests)
 

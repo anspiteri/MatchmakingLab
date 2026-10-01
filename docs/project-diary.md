@@ -28,12 +28,29 @@ Future
 
 ### Not as Important
 * think about whether the residual random-walk drift in the rating scale can be damped, e.g. a step that decays with a player's match count (01/10/2026)
+* re-check the dispersion tripwire's 1.5x bound at the 02/10 defaults, since 500 players at 4000 ticks now measures 1.64x (02/10/2026)
 * double-check completeness of bt match model math component in test suite (21/08/2026)
 * double-check and possibly document the bt model match tests, ensuring the tests are flexible to changing weights (21/08/2026)
 * assess whether it's worth changing the bt greedy approach to employ a queue-policy that halts matching after a certain time  (24/08/2026)
 * think about adjusting the BT skill-rating system to be log-likelihood based (26/08/2026)
 
 ## Log
+02/10/2026
+Made the simulated world's size and load configurable (branch `dev/1.0-sim-config`): `--players` and `--requests MIN:MAX`, both as flags and as questions in the guided setup. Defaults 500 players and 10:50 requests per tick.
+
+Reading the CLI to do this turned up a bug that had been sitting under every measurement I have taken. `--seed` was documented as giving reproducible runs, and it did not. `SimHarness` seeded the platform (hidden-skill draws) and the simulator (match outcomes), but the factory built `BradleyTerryGenerator()` with no seed at all, so the generator made itself a `Random(None)` and drew from OS entropy. Two `--seed 7` runs differed. The tests all passed, because every one of them happened to hand the generator the same seed the harness was given — the CLI was the only path where the two disagreed, and it is the path every number in the writeup comes from. The fix is a `use_rng` on the generator, mirroring `Platform.use_rng`, and the test that catches it is deliberately end-to-end through a harness given a generator that was *not* pre-seeded, because that is the shape that failed.
+
+Where the arrival count is drawn was a real decision. It could live in the harness or in the generator, and I put it in the harness: arrival rate is a property of the simulated world rather than of any one matchmaker, so every future strategy gets it without its generator knowing, and `generate_requests(n, db)` keeps its honest "give me exactly n" contract instead of becoming "give me some number I felt like". The count draws from its own stream, so introducing a range did not shift the draws the platform and simulator already make — without that, every calibration number measured yesterday would have quietly stopped reproducing the moment the default changed from a fixed 10 to a range, and I would not have known.
+
+Now the measurement, which is the part worth recording. Phase 1 established the residual drift is a random walk in accumulated per-match noise. The new defaults let me test that claim across configurations rather than take it on faith, and it holds well: dividing the estimated spread by √(matches per player) gives 0.08–0.11 across every population, arrival range, and tick count I measured — 60 to 1500 players, 10:50 to 40:120, up to 4000 ticks. The random walk explains the drift.
+
+But it also means the numbers in yesterday's entry are specific to a configuration rather than universal. At 150 players with a fixed 10 requests per tick, 2000 ticks reaches 1.03x. At the new default of 500 players, 2000 ticks is 1.00–1.12x and 4000 ticks is 1.64x; at 40:120 arrivals, 2000 ticks is already 1.56x and 4000 is 2.02x. Nothing has regressed — the walk is doing exactly what √(matches) says it should — but the dispersion tripwire's 1.5x bound, chosen yesterday to sit just under the additive rule's 1.52x, is now only a tripwire for configurations similar to the one it was measured at. A long run at the new default will trip it without anything being wrong. That belongs in the backlog rather than papered over by moving the bound, because the honest fix is the drift damping already sitting there.
+
+The other measurement was a claim I had to retract. I justified the wide default on the grounds that a real queue sees bursts. It does not: the greedy matcher drains whatever it is handed within the tick, and across every configuration I tried the queue never built past 1, not even at 40:120 arrivals. So the range varies *load* — matches per player over the run — and not queue depth at all. The default is still right, and for the √(matches) reason above rather than the one I gave, but the comment in the source and the docs now say what is actually true.
+
+02/10/2026
+Startup validation is worth more than it looks. `--players 8 --requests 1:50` is a legal-looking pair of flags that cannot run: the generator can only hand out as many distinct new players as its pool holds, and it asks for exactly the number drawn. Without a cross-field check that dies on tick one with a bare `ValueError` from inside the generator, after the strategy banner has already printed. Checking it at startup costs four lines and turns it into a sentence explaining which flag contradicts which. The same reasoning put the blank-answer path in the guided prompt: an empty line has always meant "take the default", and the first setup question with a non-enum answer was the first place that could have turned into a parse error.
+
 01/10/2026
 Fixed the rating scale's over-dispersion by moving the update into log space (branch `dev/1.0-log-ratings`), which is the structural fix the 30/09 entry left as future work. The deferred item and "the structural fix" turned out to be the same thing, so the two are now one piece of work rather than a follow-up.
 

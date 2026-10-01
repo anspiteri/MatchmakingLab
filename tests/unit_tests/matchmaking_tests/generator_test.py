@@ -492,8 +492,25 @@ def test_factory_defaults():
 
     assert isinstance(factory.create_platform(), Platform)
     assert isinstance(factory.create_platform().strategy, BradleyTerry)
-    assert isinstance(factory.create_generator(), RequestGenerator)
-    assert isinstance(factory.create_generator(), BradleyTerryGenerator)
+    assert isinstance(factory.create_generator(50), RequestGenerator)
+    assert isinstance(factory.create_generator(50), BradleyTerryGenerator)
+
+
+def test_factory_sizes_the_generator_pool_from_player_count():
+    """The population reaches the generator's pool, rather than sitting in the factory.
+
+    One player per pool entry, so the pool size is a hard ceiling on how many
+    distinct players can ever exist in a run. If this silently stopped being
+    plumbed, every run would be the same 500-player population regardless of the
+    flag or prompt that asked for something else.
+    """
+    factory = BradleyTerryFactory()
+
+    generator = factory.create_generator(12)
+
+    assert isinstance(generator, BradleyTerryGenerator)
+    requests = generator.generate_requests(12, {})
+    assert len({req["user"] for req in requests}) == 12
 
 
 def test_factory_passes_config_to_strategy():

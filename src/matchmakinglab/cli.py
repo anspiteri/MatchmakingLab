@@ -5,9 +5,14 @@ from matchmakinglab.matchmakers import (
     BTOptimisationMethod,
 )
 from matchmakinglab.matchmakers.base_generator import RequestGenerator
+from matchmakinglab.matchmakers.bradley_terry.generator import DEFAULT_PLAYER_COUNT
 from matchmakinglab.matchmakers.factory import BradleyTerryFactory
 from matchmakinglab.platform.platform import Platform
-from matchmakinglab.platform.sim_harness import SimHarness
+from matchmakinglab.platform.sim_harness import (
+    DEFAULT_REQUEST_RANGE,
+    SimHarness,
+    _validate_request_range,
+)
 from matchmakinglab.ui.app import MatchmakingLabApp
 
 # ── Strategy Registry ──────────────────────────────────────────────
@@ -42,6 +47,32 @@ STRATEGIES = {
 DEFAULT_STRATEGY = "bradley-terry"
 
 
+# ── Simulation Setup ────────────────────────────────────────────────
+# How the simulated world is populated, as opposed to how any one matchmaker
+# works. Deliberately kept out of a strategy's sub-config: the harness draws
+# arrivals for every approach alike, so putting these there would mean adding a
+# second strategy duplicated all of them.
+#
+# `type` is int, str, an enum class for a sub-config choice, or "range" for a
+# MIN:MAX pair. The flag and the guided prompt are generated from this list, so
+# adding an option here adds it to both.
+
+SIM_CONFIG = [
+    {
+        "name": "players",
+        "type": int,
+        "default": DEFAULT_PLAYER_COUNT,
+        "help": "Size of the simulated player population",
+    },
+    {
+        "name": "requests",
+        "type": "range",
+        "default": DEFAULT_REQUEST_RANGE,
+        "help": "Requests arriving per tick, as MIN:MAX",
+    },
+]
+
+
 # ── Helpers ────────────────────────────────────────────────────────
 def _resolve_enum_value(enum_type, raw: str):
     """Convert a user-supplied string to an enum member (case-insensitive)."""
@@ -61,24 +92,131 @@ def _format_choices(enum_type) -> str:
     )
 
 
-def _prompt_config(config_options: list[dict]) -> dict:
-    """Interactively prompt for each config option, displaying its default."""
-    resolved = {}
+def _render_value(value) -> str:
+    """Render an option's value the way a user would type it back."""
+    if isinstance(value, tuple):
+        return ":".join(str(v) for v in value)
+    return str(value).lower()
 
-    for opt in config_options:
-        name = opt["name"]
-        default = opt["default"]
 
-        raw = click.prompt(
-            f"  {opt['help']} [{_format_choices(opt['type'])}]",
-            default=default.name.lower().replace("_", "-"),
-            show_default=True,
-            type=click.STRING,
+def _parse_request_range(raw: str) -> tuple[int, int]:
+    """Parse a MIN:MAX request range, accepting a dash separator too.
+
+    Bounds are checked here rather than at the first tick, so a run that could
+    never work is refused at startup with a readable reason.
+    """
+    separator = ":" if ":" in raw else "-"
+    parts = raw.split(separator)
+
+    if len(parts) != 2 or not all(p.strip().isdigit() for p in parts):
+        raise click.ClickException(
+            f"Invalid request range '{raw}'. Expected MIN:MAX of whole numbers, "
+            f"e.g. 10:50."
         )
 
-        resolved[name] = _resolve_enum_value(opt["type"], raw)
+    try:
+        return _validate_request_range((int(parts[0]), int(parts[1])))
+    except ValueError as exc:
+        raise click.ClickException(f"Invalid request range '{raw}'. {exc}") from None
+
+
+def _parse_option_value(opt: dict, raw: str):
+    """Convert one user-supplied string into this option's own type."""
+    if opt["type"] is int:
+        try:
+            return int(raw)
+        except ValueError:
+            raise click.ClickException(
+                f"Invalid value '{raw}' for {opt['name']}. Expected a whole number."
+            ) from None
+
+    if opt["type"] == "range":
+        return _parse_request_range(raw)
+
+    if opt["type"] is str:
+        return raw
+
+    try:
+        return _resolve_enum_value(opt["type"], raw)
+    except KeyError:
+        raise click.ClickException(
+            f"Invalid value '{raw}' for {opt['name']}. "
+            f"Choose from: {_format_choices(opt['type'])}"
+        ) from None
+
+
+def _prompt_option(opt: dict):
+    """Ask for one option interactively, then type the answer."""
+    label = opt["help"]
+
+    if opt["type"] not in (int, str, "range"):
+        label = f"{label} [{_format_choices(opt['type'])}]"
+
+    raw = click.prompt(
+        f"  {label}",
+        default=_render_value(opt["default"]),
+        show_default=True,
+    )
+
+    # click itself substitutes the default for a blank line; this keeps a blank
+    # answer meaning the same thing if the prompt is ever driven some other way.
+    if not raw.strip():
+        return opt["default"]
+
+    return _parse_option_value(opt, raw)
+
+
+def _prompt_config(config_options: list[dict]) -> dict:
+    """Interactively prompt for each config option, displaying its default."""
+    return {opt["name"]: _prompt_option(opt) for opt in config_options}
+
+
+def _resolve_sim_setup(explicit: dict, interactive: bool) -> dict:
+    """Resolve the simulation setup from defaults, flags, and prompts.
+
+    An explicit flag always wins, and always suppresses its own prompt: asking
+    `--players 200` and then querying population size anyway would be a bug, not
+    a confirmation. With no flag the option comes from a prompt when the guided
+    setup is running, and from its default otherwise.
+    """
+    resolved: dict = {}
+
+    for opt in SIM_CONFIG:
+        name = opt["name"]
+        if name in explicit:
+            resolved[name] = explicit[name]
+        elif interactive:
+            resolved[name] = _prompt_option(opt)
+        else:
+            resolved[name] = opt["default"]
 
     return resolved
+
+
+def _validate_sim_setup(setup: dict) -> dict:
+    """Check the setup against itself, not just each field in isolation.
+
+    The generator can only hand out as many distinct new players as its pool
+    holds, and asks for exactly that many on the first tick. A population
+    smaller than the widest arrival batch would therefore die on tick one with a
+    bare ValueError from deep in the generator.
+    """
+    players = setup["players"]
+    if players < 2:
+        raise click.ClickException(
+            f"--players must be at least 2, got {players}. A single player can "
+            f"never be matched against anyone."
+        )
+
+    high = setup["requests"][1]
+    if high > players:
+        raise click.ClickException(
+            f"--requests asks for up to {high} requests per tick but --players is "
+            f"only {players}. The widest batch must fit in the population, "
+            f"otherwise the run cannot start."
+        )
+
+    return setup
 
 
 def _build_help() -> str:
@@ -99,8 +237,16 @@ def _build_help() -> str:
         "  matchmakinglab --strategy <t> <cfg>   boot a strategy with positional config",
         "  matchmakinglab --default              boot bradley-terry with defaults",
         "",
-        "Sub-configuration (in positional order, after the strategy):",
+        "Simulation setup (applies to every strategy; also prompted for in the",
+        "guided setup, where a flag you passed skips its own question):",
     ]
+
+    for opt in SIM_CONFIG:
+        lines.append(
+            f"  --{opt['name']} <{_render_value(opt['default'])}>  {opt['help']}"
+        )
+
+    lines += ["", "Sub-configuration (in positional order, after the strategy):"]
 
     for key, entry in STRATEGIES.items():
         if entry["config"]:
@@ -139,9 +285,16 @@ def _collect_config_from_positional(
 
 
 def _run_setup(
-    strategy: str | None, default: bool, config_values: tuple[str, ...]
-) -> tuple[Platform, RequestGenerator]:
-    """Initialise the platform with the chosen strategy and config."""
+    strategy: str | None,
+    default: bool,
+    config_values: tuple[str, ...],
+    sim_flags: dict,
+) -> tuple[Platform, RequestGenerator, dict, str]:
+    """Initialise the strategy, the generator, and the simulation setup.
+
+    Returns the built objects plus the resolved setup and the chosen strategy
+    name, so the caller does not have to resolve any of it twice.
+    """
     strategy_given = strategy is not None
 
     if strategy_given and default:
@@ -165,6 +318,7 @@ def _run_setup(
     entry = STRATEGIES[strategy]
     factory_cls = entry["factory"]
     config_options = entry["config"]
+    interactive = not default and not strategy_given
 
     click.echo(f"\nStrategy: {entry['description']}")
 
@@ -177,11 +331,20 @@ def _run_setup(
         config = _prompt_config(config_options)
         click.echo()
 
+    if interactive:
+        click.echo("Configure simulation:\n")
+    setup = _validate_sim_setup(_resolve_sim_setup(sim_flags, interactive))
+    if interactive:
+        click.echo()
+
     factory = factory_cls(config)
     platform = factory.create_platform()
-    generator = factory.create_generator()
+    # The population is a generator concern: it is the generator's pool of
+    # accounts to draw requests from, so it is passed in at construction rather
+    # than reassigned afterwards.
+    generator = factory.create_generator(setup["players"])
 
-    return platform, generator
+    return platform, generator, setup, strategy
 
 
 class _HelpCommand(click.Command):
@@ -233,6 +396,22 @@ class _HelpCommand(click.Command):
     default=None,
     help="Seed for reproducible runs (plumbed through to the harness).",
 )
+@click.option(
+    "--players",
+    type=int,
+    default=None,
+    help=f"Size of the simulated player population [default: {DEFAULT_PLAYER_COUNT}].",
+)
+@click.option(
+    "--requests",
+    "requests_range",
+    type=str,
+    default=None,
+    help=(
+        "Requests arriving per tick, as MIN:MAX "
+        f"[default: {_render_value(DEFAULT_REQUEST_RANGE)}]."
+    ),
+)
 @click.argument("config_values", nargs=-1)
 def cli(
     strategy: str,
@@ -241,13 +420,32 @@ def cli(
     headless: bool,
     ticks: int,
     seed: int,
+    players: int,
+    requests_range: str,
 ):
-    platform, generator = _run_setup(strategy, default, config_values)
+    # Only flags actually given are collected, so a setup option left off the
+    # command line falls through to its prompt or default rather than being
+    # pinned to a value the user never typed.
+    sim_flags: dict = {}
+    if players is not None:
+        sim_flags["players"] = players
+    if requests_range is not None:
+        sim_flags["requests"] = _parse_request_range(requests_range)
+
+    platform, generator, setup, chosen = _run_setup(
+        strategy, default, config_values, sim_flags
+    )
 
     click.echo("Platform setup.")
 
-    harness = SimHarness(generator, platform, seed=seed)
-    config_summary = f"strategy: {strategy or 'bradley-terry'}  {default and '(defaults)' or ''}".strip()
+    harness = SimHarness(
+        generator, platform, seed=seed, request_range=setup["requests"]
+    )
+    config_summary = (
+        f"strategy: {chosen}  players: {setup['players']}  "
+        f"requests: {_render_value(setup['requests'])}"
+    )
+    click.echo(config_summary)
 
     if headless:
         _run_headless(harness, ticks)

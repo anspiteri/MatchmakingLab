@@ -21,6 +21,10 @@ _GEN_TYPES = [GenerationType.NEW_PLAYER, GenerationType.EXISTING_PLAYER]
 
 MAX_TRIES = 25
 
+# The simulated population. One account per generated user, drawn from a fixed
+# pool, so this is a hard ceiling on how many players can ever exist in a run.
+DEFAULT_PLAYER_COUNT = 500
+
 
 # Non-UNDEFINED regions that can appear in request features.
 _ACTIVE_REGIONS = [
@@ -49,13 +53,28 @@ class BradleyTerryGenerator(RequestGenerator):
     against themselves.
     """
 
-    def __init__(self, player_count: int = 500, seed: int | None = None) -> None:
-        self._rng = random.Random(seed)
+    def __init__(
+        self, player_count: int = DEFAULT_PLAYER_COUNT, seed: int | None = None
+    ) -> None:
         self._pool = [f"player_{i:04d}" for i in range(player_count)]
         self._index = 0
+        # None means no source supplied yet: the harness attaches one for a seeded
+        # run, mirroring Platform.use_rng, and an unseeded generator built directly
+        # still resolves its own below.
+        self._rng: random.Random | None = None if seed is None else random.Random(seed)
+
+    def use_rng(self, rng: random.Random) -> None:
+        if self._rng is None:
+            self._rng = rng
+
+    def _resolve_rng(self) -> random.Random:
+        if self._rng is None:
+            self._rng = random.Random()
+        return self._rng
 
     def generate_requests(self, number, player_database: dict) -> list:
         result = []
+        rng = self._resolve_rng()
 
         # CASE ONE: EMPTY DATABASE
         if not player_database:
@@ -63,9 +82,7 @@ class BradleyTerryGenerator(RequestGenerator):
                 raise ValueError("Request number is greater than max allowed players")
 
             for _ in range(number):
-                result.append(
-                    _gen_new_player_request(self._index, self._pool, self._rng)
-                )
+                result.append(_gen_new_player_request(self._index, self._pool, rng))
                 self._index += 1
             return result
 
@@ -73,7 +90,7 @@ class BradleyTerryGenerator(RequestGenerator):
         elif self._index >= len(self._pool):
             result.extend(
                 _gen_n_existing_requests(
-                    number, self._index, self._pool, self._rng, player_database
+                    number, self._index, self._pool, rng, player_database
                 )
             )
 
@@ -82,7 +99,7 @@ class BradleyTerryGenerator(RequestGenerator):
             emitted: set[str] = set()
 
             for i in range(number):
-                match self._rng.choice(_GEN_TYPES):
+                match rng.choice(_GEN_TYPES):
                     case GenerationType.NEW_PLAYER:
                         if self._index >= len(self._pool):
                             result.extend(
@@ -90,7 +107,7 @@ class BradleyTerryGenerator(RequestGenerator):
                                     number - i,
                                     self._index,
                                     self._pool,
-                                    self._rng,
+                                    rng,
                                     player_database,
                                     exclude=emitted,
                                 )
@@ -99,9 +116,7 @@ class BradleyTerryGenerator(RequestGenerator):
 
                         else:
                             result.append(
-                                _gen_new_player_request(
-                                    self._index, self._pool, self._rng
-                                )
+                                _gen_new_player_request(self._index, self._pool, rng)
                             )
                             emitted.add(self._pool[self._index])
                             self._index += 1
@@ -110,7 +125,7 @@ class BradleyTerryGenerator(RequestGenerator):
                         existing = _gen_existing_player_request(
                             self._index,
                             self._pool,
-                            self._rng,
+                            rng,
                             player_database,
                             exclude=emitted,
                         )
@@ -121,7 +136,7 @@ class BradleyTerryGenerator(RequestGenerator):
 
                                 result.append(
                                     _gen_new_player_request(
-                                        self._index, self._pool, self._rng
+                                        self._index, self._pool, rng
                                     )
                                 )
                                 emitted.add(self._pool[self._index])

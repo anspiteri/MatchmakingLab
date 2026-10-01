@@ -698,3 +698,274 @@ def test_spreads_start_below_the_truth_and_close_on_it():
     # Close to parity without having run away in either direction.
     assert late.rating_spread == pytest.approx(late.true_skill_spread, rel=0.25)
     assert late.rating_accuracy > early.rating_accuracy
+
+
+# ---------- Arrival rate ----------
+
+
+def _requests_per_tick(harness: SimHarness, ticks: int) -> list[int]:
+    """How many requests the generator was asked for on each of these ticks.
+
+    Counts are read off the harness's own draw rather than the requests that
+    reached the queue: a generator is free to return fewer than it was asked for
+    when the pool runs dry, and it is the draw that this range is about.
+    """
+    return [harness._requests_this_tick() for _ in range(ticks)]
+
+
+def test_requests_stay_inside_the_configured_range():
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(player_count=500, seed=1),
+        Platform(BradleyTerry()),
+        seed=1,
+        request_range=(7, 19),
+    )
+
+    counts = _requests_per_tick(harness, 300)
+
+    assert counts
+    assert min(counts) >= 7
+    assert max(counts) <= 19
+
+
+def test_requests_actually_vary_within_the_range():
+    """A range that never varied would be a constant arrival rate in disguise.
+
+    Worth pinning because the default range is wide, and a harness that quietly
+    used only one endpoint would still pass the bounds check above.
+    """
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(player_count=500, seed=1),
+        Platform(BradleyTerry()),
+        seed=1,
+        request_range=(7, 19),
+    )
+
+    counts = _requests_per_tick(harness, 300)
+
+    assert len(set(counts)) > 1
+
+
+def test_requests_reach_both_ends_of_the_range():
+    """Over enough draws, the bounds themselves are not just respected but used.
+
+    A narrower guard: an implementation that drew only from the middle of the
+    range would satisfy the bounds test and quietly understate the load.
+    """
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(player_count=500, seed=1),
+        Platform(BradleyTerry()),
+        seed=1,
+        request_range=(7, 19),
+    )
+
+    counts = set(_requests_per_tick(harness, 1000))
+
+    assert 7 in counts
+    assert 19 in counts
+
+
+def test_requests_per_step_pins_arrivals_to_a_fixed_count():
+    """An explicit count overrides the range entirely.
+
+    This is the path most of the suite and every fixed-arrival measurement uses,
+    so it has to mean exactly what it says rather than "roughly".
+    """
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(player_count=500, seed=1),
+        Platform(BradleyTerry()),
+        requests_per_step=4,
+        seed=1,
+        request_range=(7, 19),
+    )
+
+    assert _requests_per_tick(harness, 200) == [4] * 200
+
+
+def test_default_request_range_is_the_documented_wide_one():
+    """The default is a range, not the fixed 10 a bare harness used to assume.
+
+    Pinned so that changing it has to be a decision: the wide default is what
+    gives the queue bursts rather than a flattering constant arrival rate.
+    """
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(player_count=500, seed=1),
+        Platform(BradleyTerry()),
+        seed=1,
+    )
+
+    assert harness.request_range == (10, 50)
+    assert harness.requests_per_step is None
+    assert min(_requests_per_tick(harness, 200)) >= 10
+    assert max(_requests_per_tick(harness, 200)) <= 50
+
+
+def test_the_request_range_varies_the_number_of_requests_per_tick():
+    """A variable arrival rate changes the amount of work the harness asks for.
+
+    The queue itself may still be drained in one tick, but the load presented
+    to the matcher — total requests that arrived that tick — is now a random
+    variable. That is the property the default range is meant to introduce.
+    """
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(player_count=500, seed=1),
+        Platform(BradleyTerry()),
+        seed=1,
+        request_range=(10, 50),
+    )
+
+    counts = _requests_per_tick(harness, 500)
+
+    # If we had a constant rate, this would be exactly 1; with a range it is > 1.
+    assert len(set(counts)) > 10
+    assert min(counts) == 10
+    assert max(counts) == 50
+
+
+def test_a_wider_range_raises_the_total_arrival_count():
+    """The range is load-bearing: more arrivals per tick, more requests total.
+
+    Asserted on the snapshot's own counter, which is what the request-rate panel
+    figure is built from.
+    """
+    narrow = SimHarness(
+        gen.BradleyTerryGenerator(player_count=500, seed=1),
+        Platform(BradleyTerry()),
+        seed=1,
+        request_range=(2, 4),
+    )
+    wide = SimHarness(
+        gen.BradleyTerryGenerator(player_count=500, seed=1),
+        Platform(BradleyTerry()),
+        seed=1,
+        request_range=(20, 60),
+    )
+
+    for _ in range(200):
+        narrow.step()
+    for _ in range(200):
+        wide.step()
+
+    assert wide._total_requests > narrow._total_requests
+
+
+def test_request_draws_do_not_disturb_the_seeded_player_pool():
+    """Arrival counts draw from their own stream.
+
+    If they drew from the run's main seed instead, introducing a request range
+    would shift the platform's and simulator's draws, so every calibration
+    number measured before this change would quietly stop reproducing. Both
+    harnesses below see the same player abilities and the same match outcomes.
+    """
+    fixed = SimHarness(
+        gen.BradleyTerryGenerator(player_count=60, seed=1),
+        Platform(BradleyTerry()),
+        requests_per_step=10,
+        seed=1,
+    )
+    ranged = SimHarness(
+        gen.BradleyTerryGenerator(player_count=60, seed=1),
+        Platform(BradleyTerry()),
+        seed=1,
+        request_range=(3, 40),
+    )
+
+    for _ in range(60):
+        fixed.step()
+        ranged.step()
+
+    def skills(harness) -> list:
+        return [
+            p.player_features[TRUE_SKILL_KEY]
+            for p in harness.state.player_database.values()
+        ]
+
+    assert skills(fixed) == skills(ranged)
+
+
+@pytest.mark.parametrize("bad", [(0, 10), (10, 0), (50, 10), (-1, 5)])
+def test_an_unusable_request_range_is_refused(bad):
+    """A range that cannot be drawn from is rejected at construction.
+
+    These would otherwise surface as a silent 0-arrival or an exception deep in
+    the generator partway into a run.
+    """
+    with pytest.raises(ValueError):
+        SimHarness(
+            gen.BradleyTerryGenerator(player_count=500, seed=1),
+            Platform(BradleyTerry()),
+            seed=1,
+            request_range=bad,
+        )
+
+
+def test_a_single_value_range_is_accepted_as_a_fixed_rate():
+    """``--requests 10:10`` is the way to ask for a constant arrival rate."""
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(player_count=500, seed=1),
+        Platform(BradleyTerry()),
+        seed=1,
+        request_range=(10, 10),
+    )
+
+    assert _requests_per_tick(harness, 100) == [10] * 100
+
+
+# ---------- Seed plumbing ----------
+
+
+def test_a_seeded_run_is_reproducible_end_to_end():
+    """Same seed, same run - the property --seed advertises.
+
+    This failed before the generator was seeded: the platform and simulator
+    respected the seed but the generator built itself an unseeded Random, so who
+    queued and with what latency and region varied between identical runs. Only
+    reachable through the CLI before, since the tests all happened to seed the
+    generator themselves with the same value the harness was given.
+    """
+
+    def run() -> list:
+        harness = SimHarness(
+            gen.BradleyTerryGenerator(player_count=80, seed=None),
+            Platform(BradleyTerry()),
+            seed=11,
+            request_range=(4, 15),
+        )
+        out = []
+        for _ in range(80):
+            snapshot = harness.step()
+            out.append((snapshot.population_size, len(snapshot.queue)))
+        return out
+
+    assert run() == run()
+
+
+def test_different_seeds_still_produce_different_runs():
+    """The reproducibility above must not have come from everything being fixed."""
+
+    def run(seed: int) -> list:
+        harness = SimHarness(
+            gen.BradleyTerryGenerator(player_count=80, seed=None),
+            Platform(BradleyTerry()),
+            seed=seed,
+            request_range=(4, 15),
+        )
+        return [len(harness.step().queue) for _ in range(80)]
+
+    assert run(11) != run(12)
+
+
+def test_an_explicitly_seeded_generator_keeps_its_own_seed():
+    """A generator built with a seed is not silently re-seeded by the harness.
+
+    Same rule the platform follows: an explicitly supplied source of randomness
+    is never replaced.
+    """
+    generator = gen.BradleyTerryGenerator(player_count=40, seed=99)
+
+    SimHarness(generator, Platform(BradleyTerry()), seed=1)
+
+    first = generator.generate_requests(5, {})
+    assert first == gen.BradleyTerryGenerator(
+        player_count=40, seed=99
+    ).generate_requests(5, {})

@@ -14,8 +14,13 @@ class MatchmakerFactory(ABC):
         pass
 
     @abstractmethod
-    def create_generator(self) -> RequestGenerator:
-        pass
+    def create_generator(self, player_count: int) -> RequestGenerator:
+        """Build the generator, sized to hold ``player_count`` distinct accounts.
+
+        Population size is passed in rather than owned by the factory: it is a
+        property of the simulated world, and the CLI resolves it alongside the
+        rest of the simulation setup.
+        """
 
 
 class BradleyTerryFactory(MatchmakerFactory):
@@ -25,5 +30,5 @@ class BradleyTerryFactory(MatchmakerFactory):
     def create_platform(self) -> Platform:
         return Platform(BradleyTerry(**self._config))
 
-    def create_generator(self) -> RequestGenerator:
-        return BradleyTerryGenerator()
+    def create_generator(self, player_count: int) -> RequestGenerator:
+        return BradleyTerryGenerator(player_count=player_count)

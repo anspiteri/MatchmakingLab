@@ -58,7 +58,7 @@ A `MatchmakingStrategy` defines how players are matched (setup_features, running
 
 A `SimHarness` (see `platform/sim_harness.py`) owns the full runtime composition — generator, platform, simulator and `PlatformState` — and exposes a single `step()` that returns a read-only `SimSnapshot`. The display layer only ever sees these snapshots, never the sim internals, so the simulation can be refactored freely beneath that boundary. That display layer is a [Textual](https://github.com/Textualize/textual) TUI in `matchmakinglab/ui/` driven by a tick timer, plus a headless mode that logs tick stats to stdout without the TUI.
 
-Configuration is driven from the CLI entrypoint (`cli.py`), which offers an interactive guided setup on startup as well as promptless flag-based booting.
+Configuration is driven from the CLI entrypoint (`cli.py`), which offers an interactive guided setup on startup as well as promptless flag-based booting. It covers two kinds of configuration: a strategy's own sub-configuration (which is positional and enum-only, and generated from each strategy's declaration), and the simulation setup shared by every strategy (`--players`, `--requests`), which is declared once and drives both the flags and the guided-setup questions.
 
 For more details on each module, see [architecture](./docs/architecture.md).
 
@@ -92,6 +92,18 @@ The entrypoint is the `matchmakinglab` command (registered as the `matchmakingla
 
 - **Seed** — pass a seed through to the harness for reproducible runs:
   `matchmakinglab --default --seed 42`
+
+- **Population size** — how many simulated players the run can ever contain (default 500):
+  `matchmakinglab --default --players 150`
+
+- **Requests per tick** — how much work arrives each tick, as an inclusive `MIN:MAX`
+  range (default `10:50`). A fixed rate is the degenerate case:
+  `matchmakinglab --default --requests 10:10`
+
+  Both of these are also asked for in the interactive guided setup, where a flag
+  you passed skips its own question. Note that the widest batch must fit in the
+  population, so `--players 8 --requests 1:50` is refused at startup rather than
+  failing on the first tick.
 
 To see the full help, including each strategy's sub-configuration order, use:
 `matchmakinglab --help`

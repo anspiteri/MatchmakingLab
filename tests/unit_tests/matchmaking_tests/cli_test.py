@@ -108,7 +108,7 @@ def test_collect_config_from_positional_rejects_invalid_value():
 
 
 def test_run_setup_defaults():
-    platform, generator = _run_setup(None, True, ())
+    platform, generator, setup, name = _run_setup(None, True, (), {})
 
     assert isinstance(platform, Platform)
     assert isinstance(platform.strategy, BradleyTerry)
@@ -117,10 +117,30 @@ def test_run_setup_defaults():
     )
     assert platform.strategy._optimisation_method == BTOptimisationMethod.GREEDY
     assert isinstance(generator, BradleyTerryGenerator)
+    assert setup == {"players": 500, "requests": (10, 50)}
+    assert name == "bradley-terry"
+
+
+def test_run_setup_sizes_the_generator_from_the_population():
+    _, generator, setup, _ = _run_setup(
+        None, True, (), {"players": 12, "requests": (3, 6)}
+    )
+
+    assert setup["players"] == 12
+    assert isinstance(generator, BradleyTerryGenerator)
+    assert len(generator.generate_requests(12, {})) == 12
+
+
+def test_run_setup_passes_flags_through_to_the_setup():
+    _, _, setup, _ = _run_setup(None, True, (), {"players": 30, "requests": (2, 9)})
+
+    assert setup == {"players": 30, "requests": (2, 9)}
 
 
 def test_run_setup_from_positional_config():
-    platform, _ = _run_setup("bradley-terry", False, ("nearest-neighbour", "greedy"))
+    platform, _, _, _ = _run_setup(
+        "bradley-terry", False, ("nearest-neighbour", "greedy"), {}
+    )
 
     strategy = platform.strategy
     assert isinstance(strategy, BradleyTerry)
@@ -131,27 +151,80 @@ def test_run_setup_from_positional_config():
 
 def test_run_setup_rejects_default_with_strategy():
     with pytest.raises(ClickException, match="--strategy.*--default"):
-        _run_setup("bradley-terry", True, ())
+        _run_setup("bradley-terry", True, (), {})
 
 
 def test_run_setup_rejects_unknown_strategy():
     with pytest.raises(ClickException, match="Unknown strategy"):
-        _run_setup("mystery", False, ())
+        _run_setup("mystery", False, (), {})
 
 
 def test_run_setup_interactive_prompt(mocker):
+    # Strategy, its two sub-config values, then the two simulation setup values.
     mocker.patch(
         "matchmakinglab.cli.click.prompt",
-        side_effect=["bradley-terry", "naive", "greedy"],
+        side_effect=["bradley-terry", "naive", "greedy", "80", "3:7"],
     )
 
-    platform, generator = _run_setup(None, False, ())
+    platform, generator, setup, _ = _run_setup(None, False, (), {})
 
     assert isinstance(platform.strategy, BradleyTerry)
     assert platform.strategy._candidate_generation_method == (
         BTCandidateGenerationMethod.NAIVE
     )
     assert isinstance(generator, BradleyTerryGenerator)
+    assert setup == {"players": 80, "requests": (3, 7)}
+
+
+def test_run_setup_interactive_prompt_falls_back_to_defaults(mocker):
+    mocker.patch(
+        "matchmakinglab.cli.click.prompt",
+        side_effect=["bradley-terry", "naive", "greedy", "", ""],
+    )
+
+    _, _, setup, _ = _run_setup(None, False, (), {})
+
+    assert setup == {"players": 500, "requests": (10, 50)}
+
+
+def test_run_setup_flags_suppress_their_own_prompt(mocker):
+    """A flag already answered is not asked again.
+
+    Prompts are the four with no value behind them; if --players also prompted,
+    the value typed on the command line would be silently ignored in favour of
+    whatever the user then typed.
+    """
+    prompt = mocker.patch(
+        "matchmakinglab.cli.click.prompt",
+        side_effect=["bradley-terry", "naive", "greedy", "4:6"],
+    )
+
+    _, _, setup, _ = _run_setup(None, False, (), {"players": 40})
+
+    assert prompt.call_count == 4
+    assert setup == {"players": 40, "requests": (4, 6)}
+
+
+def test_run_setup_does_not_prompt_outside_the_guided_setup(mocker):
+    prompt = mocker.patch("matchmakinglab.cli.click.prompt")
+
+    _run_setup(None, True, (), {})
+    _run_setup("bradley-terry", False, ("naive", "greedy"), {})
+
+    assert prompt.call_count == 0
+
+
+# ---------- Setup validation ----------
+
+
+def test_run_setup_rejects_a_population_smaller_than_a_request_batch():
+    with pytest.raises(ClickException, match="widest batch must fit"):
+        _run_setup(None, True, (), {"players": 8, "requests": (1, 50)})
+
+
+def test_run_setup_rejects_a_population_below_two():
+    with pytest.raises(ClickException, match="at least 2"):
+        _run_setup(None, True, (), {"players": 1})
 
 
 # ---------- Prompt config ----------
@@ -320,18 +393,111 @@ def test_cli_rejects_missing_positional_config():
 
 
 def test_cli_interactive_setup_boots_platform(mocker):
+    # Strategy, its two sub-config values, then the two simulation setup values.
     prompt = mocker.patch(
         "matchmakinglab.cli.click.prompt",
-        side_effect=["bradley-terry", "naive", "greedy"],
+        side_effect=["bradley-terry", "naive", "greedy", "150", "4:9"],
     )
     headless = mocker.patch("matchmakinglab.cli._run_headless")
 
     result = CliRunner().invoke(cli, ["--headless", "--ticks", "1"])
 
     assert result.exit_code == 0, result.output
-    assert prompt.call_count == 3
+    assert prompt.call_count == 5
     # The interactive path still routes through the headless runner.
     headless.assert_called_once()
+
+
+def test_cli_interactive_setup_applies_the_answered_values(mocker):
+    mocker.patch(
+        "matchmakinglab.cli.click.prompt",
+        side_effect=["bradley-terry", "naive", "greedy", "150", "4:9"],
+    )
+    mocker.patch("matchmakinglab.cli._run_headless")
+
+    result = CliRunner().invoke(cli, ["--headless", "--ticks", "1"])
+
+    assert "players: 150  requests: 4:9" in result.output
+
+
+def test_cli_interactive_setup_accepts_defaults_left_blank(mocker):
+    """An empty answer takes the default, the way an empty prompt answer always has.
+
+    Worth pinning because the simulation setup is the first part of the guided
+    path with a value that is not a strategy enum, so it is the first place a
+    blank line could turn into a parse error instead of the advertised default.
+    """
+    mocker.patch(
+        "matchmakinglab.cli.click.prompt",
+        side_effect=["bradley-terry", "naive", "greedy", "", ""],
+    )
+    mocker.patch("matchmakinglab.cli._run_headless")
+
+    result = CliRunner().invoke(cli, ["--headless", "--ticks", "1"])
+
+    assert result.exit_code == 0, result.output
+    assert "players: 500  requests: 10:50" in result.output
+
+
+def test_cli_flags_skip_their_prompt_in_the_interactive_setup(mocker):
+    """A flag answers the question it would otherwise ask.
+
+    Prompt count is the strategy choice plus its two sub-config values only: the
+    two setup questions are skipped because the flags already supplied them.
+    """
+    prompt = mocker.patch(
+        "matchmakinglab.cli.click.prompt",
+        side_effect=["bradley-terry", "naive", "greedy"],
+    )
+    mocker.patch("matchmakinglab.cli._run_headless")
+
+    result = CliRunner().invoke(
+        cli, ["--headless", "--ticks", "1", "--players", "150", "--requests", "4:9"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert prompt.call_count == 3
+    assert "players: 150  requests: 4:9" in result.output
+
+
+def test_cli_flags_override_the_default_setup(mocker):
+    mocker.patch("matchmakinglab.cli.MatchmakingLabApp")
+
+    result = CliRunner().invoke(
+        cli, ["--default", "--players", "60", "--requests", "5:8"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "players: 60  requests: 5:8" in result.output
+
+
+@pytest.mark.parametrize(
+    "args, expected",
+    [
+        (["--requests", "50:10"], "below its minimum"),
+        (["--requests", "10"], "Expected MIN:MAX"),
+        (["--requests", "ten:fifty"], "Expected MIN:MAX"),
+        (["--requests", "0:10"], "minimum must be at least 1"),
+        (["--players", "1"], "must be at least 2"),
+        (["--players", "8", "--requests", "1:50"], "widest batch must fit"),
+    ],
+)
+def test_cli_rejects_an_unusable_setup(args, expected):
+    result = CliRunner().invoke(cli, ["--default", "--headless", "--ticks", "1"] + args)
+
+    assert result.exit_code != 0
+    assert expected in result.output
+
+
+def test_cli_accepts_a_dash_separated_request_range(mocker):
+    mocker.patch("matchmakinglab.cli._run_headless")
+
+    result = CliRunner().invoke(
+        cli, ["--default", "--headless", "--ticks", "1", "--requests", "4-6"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "requests: 4:6" in result.output
 
 
 def test_cli_launches_the_tui_when_not_headless(mocker):
@@ -342,7 +508,10 @@ def test_cli_launches_the_tui_when_not_headless(mocker):
     assert result.exit_code == 0, result.output
     app_cls.assert_called_once()
     _, kwargs = app_cls.call_args
-    assert kwargs["config_summary"] == "strategy: bradley-terry  (defaults)"
+    assert (
+        kwargs["config_summary"]
+        == "strategy: bradley-terry  players: 500  requests: 10:50"
+    )
     assert kwargs["seed"] is None
     app_cls.return_value.run.assert_called_once_with()
 
@@ -370,6 +539,37 @@ def test_cli_help_preserves_paragraph_breaks():
     assert "bradley-terry:" in result.output
     assert "candidate_generation_method" in result.output
     assert "optimisation_method" in result.output
+
+
+def test_cli_help_documents_the_simulation_setup():
+    """The setup options are documented in the hand-written help block.
+
+    Their generated --help entries are click's own, but the block that explains
+    how the two kinds of configuration relate is not, so it has to carry them.
+    """
+    result = CliRunner().invoke(cli, ["--help"])
+
+    assert result.exit_code == 0
+    assert "Simulation setup" in result.output
+    assert "--players" in result.output
+    assert "--requests" in result.output
+
+
+def test_sim_config_is_the_single_source_for_flags_and_prompts():
+    """Each setup option declares itself once, for both surfaces.
+
+    The flag and the guided question are generated from this list. An option
+    added here appears in both, and one that somehow reached only one of them
+    would be the sort of thing a user finds out about the wrong way.
+    """
+    names = {opt["name"] for opt in cli_module.SIM_CONFIG}
+    # Matched on the long flag, not the parameter name: --requests is parsed
+    # into `requests_range` because a bare `requests` would shadow nothing but
+    # reads as the range it is.
+    flags = {o for p in cli_module.cli.params for o in p.opts if o.startswith("--")}
+
+    assert names == {"players", "requests"}
+    assert {f"--{name}" for name in names} <= flags
 
 
 class _RecordingFormatter:

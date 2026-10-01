@@ -22,12 +22,20 @@ cli.py ──> factory ──> Platform ◄── MatchmakingStrategy
 
 The application is run through the `matchmakinglab` command (registered as the `matchmakinglab.cli:cli` console script in `pyproject.toml`). It uses [Click](https://click.palletsprojects.com/) and offers a choice of boot modes:
 
-- **Interactive guided setup**, which prompts for strategy selection and configuration.
+- **Interactive guided setup**, which prompts for strategy selection, its sub-config, and the simulation setup.
 - **Promptless boot** via `--strategy <name> <config...>` (sub-config given positionally) or `--default` (defaults).
 - **Headless mode** via `--headless --ticks N`, which drives the `SimHarness` without the TUI and logs per-tick stats to stdout.
 - **Seeding** via `--seed N`, plumbed through to the harness.
+- **Simulation setup** via `--players N` and `--requests MIN:MAX`, which are also asked for in the guided setup.
 
 After setup, the CLI builds a `SimHarness` from the factory-produced platform and generator, then either runs the textual TUI (`ui/app.py`) or the headless loop.
+
+### Two kinds of configuration
+Strategy sub-config (which candidate-generation and optimisation method Bradley-Terry uses) is *positional* and enum-only, because it is inherently strategy-specific and the CLI generates its flags from each strategy's own declaration. Simulation setup (population size, arrival rate) is *flag-based* and is the same for every strategy, so it is declared once in `SIM_CONFIG` rather than inside a strategy's sub-config — adding a second approach would otherwise mean duplicating both options.
+
+That list is the single source for the two setup options on **both** surfaces: the `--players` / `--requests` flags and the guided-setup questions are generated from it, so an option cannot appear on one and be missing from the other. Precedence is flag → prompt → default, and a flag suppresses its own question rather than asking a question it has already answered.
+
+Both options are cross-validated at startup rather than per tick: the widest arrival batch must fit in the population, since the generator can only hand out as many distinct new players as its pool holds and asks for exactly that many on the first tick. Without this check a `--players 8 --requests 1:50` run would die on tick one with a bare `ValueError` from inside the generator.
 
 ## Simulation boundary: `platform/sim_harness.py`
 
@@ -37,6 +45,19 @@ The `SimHarness` is the single point of contact between the simulation and the d
 - `SimSnapshot` (`core/snapshot.py`) — a plain dataclass with derived facts only (queue/active/finished counts, tick, wall-clock sim seconds, request rate, and a list of feed event lines).
 
 Because the display only depends on this stable snapshot surface, `Platform`, `Simulator` and `RequestGenerator` can be refactored freely beneath the boundary.
+
+### Arrival rate
+Each tick draws how many requests to generate, from an inclusive range (`request_range`, default 10–50) or from a fixed `requests_per_step` when one is given. The draw happens in the harness rather than in a generator, because arrival rate is a property of the simulated world rather than of any one matchmaker: every strategy gets it without its generator knowing, and `generate_requests(n, db)` stays honest about its "give me exactly n" contract.
+
+Two measured caveats, both of which shaped the defaults:
+
+- **A wider range varies load, not queue depth.** The greedy matcher drains whatever it is handed within the tick, so at 500 players the queue sits near empty at any arrival rate tried, up to 40–120. What the range actually changes is the per-player match count over a run, which is what the rating calibration responds to.
+- **Dispersion responds to matches played, not ticks.** Holding the range at 10–50 and varying population and ticks, the estimated spread tracks √(matches per player) almost exactly — the ratio `spread / √matches` sits at 0.08–0.11 across every configuration measured. So a long run or a high arrival rate both push dispersion up, and 500 players at 4000 ticks reaches 1.64x where 150 players at 2000 reached 1.03x.
+
+### Seeding
+`--seed` is plumbed to the platform (hidden-skill draws), the simulator (match outcomes), the generator (who queues, with what latency and region), and a fourth stream for arrival counts. All three components take the seed independently, so each is reproducible on its own. Arrival counts draw from their **own** stream rather than the main seed, so introducing a request range does not shift the draws the platform and simulator already make — the player abilities and match outcomes of a run stay comparable as the arrival rate is varied.
+
+This matters because every calibration number in `docs/matchmaking-implementations.md` is a seeded measurement. Before the generator was seeded, `--seed` varied between identical invocations while the tests all passed, because each test happened to hand the generator the same seed the harness was given. A generator built with its own seed keeps it, mirroring `Platform.use_rng`.
 
 ## Matchmaking Engine: `matchmakers/`
 
@@ -53,6 +74,8 @@ Bradley-Terry's rating is a float and its update is multiplicative — a constan
 
 ### Request generators
 Each approach also expects specific input data (player features and request features). A coupled `RequestGenerator` (see `base_generator.py`) is responsible for producing that data. Generators are tightly coupled to their approach because the data must match what the strategy consumes.
+
+A generator draws who queues and with what latency and region, so it accepts a source of randomness via `use_rng`, called by the harness. As with `Platform.use_rng`, the no-op default means a generator that does not draw needs no change, and a generator built with its own seed keeps it. `BradleyTerryGenerator(player_count=N)` holds one account per pool entry, which makes population size a hard ceiling on how many distinct players can ever exist in a run — the factory takes it as an argument rather than owning it, since it is a property of the simulated world rather than of the approach.
 
 ### Strategy <-> Generator coupling: the factory
 Because generators and strategies are tightly coupled, a `MatchmakerFactory` (see `factory.py`) builds them together so they are always configured consistently. Each strategy provides a factory — currently `BradleyTerryFactory` — which constructs a `Platform` configured with the strategy and the matching generator.
@@ -96,7 +119,7 @@ A tick timer (interval `BASE_TICK_SECONDS / speed`) drives `harness.step()`; the
 
 ## Testing
 
-- Headless sim-loop tests (`tests/unit_tests/matchmaking_tests/harness_test.py`) drive `SimHarness` and assert invariants without Textual.
+- Headless sim-loop tests (`tests/unit_tests/matchmaking_tests/harness_test.py`) drive `SimHarness` and assert invariants without Textual, including the arrival-rate range and the seed plumbing described above.
 - Rating-system tests (`tests/unit_tests/matchmaking_tests/bt_class_test.py`) cover the update arithmetic, that the population geometric mean stays at the base rating, and that the estimated spread stays within a loose bound of the truth's. The last two run real simulations, so they are the slower tests in the suite; each was verified to fail against a deliberately broken update.
 - UI integration tests (`tests/integration_tests/ui_integration_test.py`) boot the Textual app via `App.run_test()` to verify the tick loop, reactive panels, and keybindings end-to-end in a headless terminal.
 

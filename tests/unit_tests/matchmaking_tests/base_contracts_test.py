@@ -102,10 +102,10 @@ def test_matchmaker_factory_default_bodies_return_none():
         def create_platform(self):
             return super().create_platform()
 
-        def create_generator(self):
-            return super().create_generator()
+        def create_generator(self, player_count):
+            return super().create_generator(player_count)
 
     factory = Delegating()
 
     assert factory.create_platform() is None
-    assert factory.create_generator() is None
+    assert factory.create_generator(10) is None
