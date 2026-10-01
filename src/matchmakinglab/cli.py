@@ -2,6 +2,8 @@ from enum import Enum
 
 import click
 
+from matchmakinglab.core.snapshot import SimSnapshot
+from matchmakinglab.export import SUPPORTED_SUFFIXES, SnapshotWriter
 from matchmakinglab.matchmakers import (
     BTCandidateGenerationMethod,
     BTOptimisationMethod,
@@ -408,6 +410,16 @@ class _HelpCommand(click.Command):
     help="Seed for reproducible runs (plumbed through to the harness).",
 )
 @click.option(
+    "--export",
+    "export_path",
+    type=click.Path(),
+    default=None,
+    help=(
+        "Write per-tick data to this file; the format comes from the "
+        f"extension ({', '.join(SUPPORTED_SUFFIXES)}). Headless only."
+    ),
+)
+@click.option(
     "--players",
     type=int,
     default=None,
@@ -433,6 +445,7 @@ def cli(
     seed: int,
     players: int,
     requests_range: str,
+    export_path: str | None,
 ):
     # Only flags actually given are collected, so a setup option left off the
     # command line falls through to its prompt or default rather than being
@@ -442,6 +455,17 @@ def cli(
         sim_flags["players"] = players
     if requests_range is not None:
         sim_flags["requests"] = _parse_request_range(requests_range)
+
+    # Checked before the setup runs rather than after, so the mistake costs a
+    # second instead of a strategy's worth of guided questions. Refusing rather
+    # than quietly exporting from a TUI session: an interactive run has no tick
+    # count to stop at, so there is no natural end to the file.
+    if export_path is not None and not headless:
+        raise click.ClickException(
+            "--export is only supported with --headless. An interactive run has "
+            "no tick count to stop at, so there would be no natural end to the "
+            "file. Use --headless --ticks N --export <path>."
+        )
 
     platform, generator, setup, chosen = _run_setup(
         strategy, default, config_values, sim_flags
@@ -459,19 +483,48 @@ def cli(
     click.echo(config_summary)
 
     if headless:
-        _run_headless(harness, ticks)
+        _run_headless(harness, ticks, export_path)
         return
 
     app = MatchmakingLabApp(harness, config_summary=config_summary, seed=seed)
     app.run()
 
 
-def _run_headless(harness: SimHarness, ticks: int) -> None:
-    """Drive the harness without the TUI, printing per-tick stats to stdout."""
-    for _ in range(ticks):
-        snapshot = harness.step()
+def _run_headless(
+    harness: SimHarness, ticks: int, export_path: str | None = None
+) -> None:
+    """Drive the harness without the TUI, printing per-tick stats to stdout.
+
+    With `export_path`, the same ticks are also written to a file. The two are
+    independent: stdout is for watching a run, the file is for keeping one.
+    """
+    # Built before the first tick so an unknown extension or an unwritable path
+    # stops the run at startup rather than after it has been simulated.
+    writer: SnapshotWriter | None = None
+    if export_path is not None:
+        try:
+            writer = SnapshotWriter(export_path)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from None
+
+    def report(snapshot: SimSnapshot) -> None:
         click.echo(
             f"tick={snapshot.tick} queue={len(snapshot.queue)} "
-            f"active={snapshot.active_matches} finished={snapshot.finished_matches} "
+            f"active={snapshot.active_matches} "
+            f"finished={snapshot.finished_matches} "
             f"sim={snapshot.sim_seconds:0.1f}s"
         )
+
+    if writer is None:
+        for _ in range(ticks):
+            report(harness.step())
+        return
+
+    with writer:
+        for _ in range(ticks):
+            snapshot = harness.step()
+            writer.write(snapshot)
+            # Flushed per tick so a long run can be watched with `tail` rather
+            # than only once it has finished.
+            writer.flush()
+            report(snapshot)

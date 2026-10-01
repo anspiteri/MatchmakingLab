@@ -24,7 +24,6 @@ class SimSnapshot:
     finished_matches: int = 0
     sim_seconds: float = 0.0
     request_rate: float = 0.0
-    mean_quality: float = 0.0
     avg_wait: float = 0.0
     avg_match_len: float = 0.0
     #: Share of decided matches won by the higher-rated side. A matchmaker that is

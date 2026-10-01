@@ -90,6 +90,9 @@ The entrypoint is the `matchmakinglab` command (registered as the `matchmakingla
 - **Headless mode** — run the simulation without the TUI, logging per-tick stats to stdout:
   `matchmakinglab --default --headless --ticks 500`
 
+- **Export** — write the same per-tick data to a file. The format comes from the extension, `.csv` or `.jsonl`:
+  `matchmakinglab --default --headless --ticks 500 --export run.csv`
+
 - **Seed** — pass a seed through to the harness for reproducible runs:
   `matchmakinglab --default --seed 42`
 

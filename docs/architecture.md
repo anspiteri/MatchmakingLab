@@ -8,7 +8,8 @@ MatchmakingLab is a CLI-driven platform for prototyping and analysing different 
 - `matchmakers/` — matchmaking approaches (strategy pattern)
 - `platform/` — platform orchestration, match simulation, and the `SimHarness` facade
 - `ui/` — the Textual TUI (app, event feed, stat panels, leaderboard)
-- `cli.py` — the CLI entrypoint, wiring boot modes and headless runs together
+- `export.py` — writing a run's per-tick data to `.csv` / `.jsonl`
+- `cli.py` — the CLI entrypoint, wiring boot modes, headless runs and export together
 
 ```
 cli.py ──> factory ──> Platform ◄── MatchmakingStrategy
@@ -25,6 +26,7 @@ The application is run through the `matchmakinglab` command (registered as the `
 - **Interactive guided setup**, which prompts for strategy selection, its sub-config, and the simulation setup.
 - **Promptless boot** via `--strategy <name> <config...>` (sub-config given positionally) or `--default` (defaults).
 - **Headless mode** via `--headless --ticks N`, which drives the `SimHarness` without the TUI and logs per-tick stats to stdout.
+- **Export** via `--export PATH` on a headless run, writing the same per-tick data to a file. The extension picks the format — `.csv` or `.jsonl` — and anything else is refused at startup, before the run rather than after it.
 - **Seeding** via `--seed N`, plumbed through to the harness.
 - **Simulation setup** via `--players N` and `--requests MIN:MAX`, which are also asked for in the guided setup.
 
@@ -46,7 +48,13 @@ The `SimHarness` is the single point of contact between the simulation and the d
 - `SimSnapshot` (`core/snapshot.py`) — a plain dataclass with derived facts only (queue/active/finished counts, tick, wall-clock sim seconds, request rate, a list of feed event lines, and a ranked top-100 `leaderboard`).
 - `last_snapshot` — the most recent `SimSnapshot`, kept so a caller holding the harness can read back the newest tick without taking a second one and perturbing the run.
 
-### The two clocks
+### Export
+
+`export.py` writes a run's per-tick data to `.csv` (header row, one row per tick) or `.jsonl` (one JSON object per line, values typed rather than textual). The suffix is the only thing that decides the format, so there is no second flag to keep in step with the first, and the writer is opened before the first tick so a bad path or extension is reported at startup rather than after an hour of simulation.
+
+The exported columns are the snapshot's scalar facts, listed in `export.FIELDS`. The per-tick lists are left out: `queue` goes out as `queue_size` because its length is a number and its contents are not, and `event_lines` and `leaderboard` are excluded outright — a hundred leaderboard rows a tick would bury the figures they are meant to sit beside.
+
+## The two clocks
 
 `sim_seconds` is real wall-clock run time: how long the simulation has actually been going. It deliberately does not depend on how fast it is being ticked, so a run left going overnight reads however long it was left for, and the speed multiplier only changes how many ticks fit inside that span. It excludes paused time, and the clock starts on the first `step()` so a freshly booted run reads `0.0` rather than its own startup cost.
 

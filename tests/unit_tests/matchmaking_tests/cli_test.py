@@ -6,6 +6,9 @@ Tests the CLI startup plumbing: config resolution, positional config
 validation and the strategy/generator setup path.
 """
 
+import csv
+import json
+
 import pytest
 from click import ClickException
 from click.testing import CliRunner
@@ -27,6 +30,7 @@ from matchmakinglab.cli import (
     _selectable_members,
     cli,
 )
+from matchmakinglab.export import FIELDS, snapshot_row
 from matchmakinglab.matchmakers import (
     BradleyTerry,
     BradleyTerryGenerator,
@@ -298,6 +302,147 @@ def test_run_headless_prints_one_line_per_tick(capsys):
     assert "active=" in lines[0]
     assert "finished=" in lines[0]
     assert "sim=" in lines[0]
+
+
+# ---------- Export ----------
+
+
+def _short_harness() -> SimHarness:
+    return SimHarness(
+        bt_generator.BradleyTerryGenerator(player_count=50, seed=1),
+        Platform(BT()),
+        requests_per_step=4,
+        seed=1,
+    )
+
+
+def test_export_csv_has_a_header_and_a_row_per_tick(tmp_path):
+    path = tmp_path / "run.csv"
+
+    _run_headless(_short_harness(), 3, str(path))
+
+    lines = path.read_text().strip().splitlines()
+    assert len(lines) == 4  # header + three ticks
+    assert lines[0].split(",") == list(FIELDS)
+    assert [line.split(",")[0] for line in lines[1:]] == ["1", "2", "3"]
+
+
+def test_export_jsonl_is_one_object_per_line(tmp_path):
+    path = tmp_path / "run.jsonl"
+
+    _run_headless(_short_harness(), 3, str(path))
+
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    assert len(records) == 3
+    assert [record["tick"] for record in records] == [1, 2, 3]
+    # Typed values, not strings: the point of the format.
+    assert isinstance(records[-1]["sim_seconds"], float)
+    assert isinstance(records[-1]["population_size"], int)
+    assert set(records[0]) == set(FIELDS)
+
+
+@pytest.mark.parametrize("name", ["run.csv", "run.jsonl", "RUN.CSV", "run.JSONL"])
+def test_export_extension_decides_the_format(tmp_path, name):
+    """The suffix is the only thing that chooses, and case does not matter."""
+    path = tmp_path / name
+
+    _run_headless(_short_harness(), 1, str(path))
+
+    text = path.read_text()
+    if name.lower().endswith(".csv"):
+        assert text.splitlines()[0].split(",") == list(FIELDS)
+    else:
+        assert set(json.loads(text.splitlines()[0])) == set(FIELDS)
+
+
+def test_export_rejects_an_unknown_extension(tmp_path):
+    path = tmp_path / "run.parquet"
+
+    with pytest.raises(ClickException) as caught:
+        _run_headless(_short_harness(), 1, str(path))
+
+    # Named, not just refused: the supported suffixes are the useful part.
+    assert ".csv" in str(caught.value)
+    assert ".jsonl" in str(caught.value)
+    assert not path.exists(), "a refused export should not create the file"
+
+
+def test_export_leaves_out_the_per_tick_lists():
+    """`queue`, `event_lines` and `leaderboard` are not exported.
+
+    A hundred leaderboard rows a tick would bury the scalars they sit beside,
+    and their lengths say nothing about the run.
+    """
+    row = snapshot_row(_short_harness().step())
+
+    assert set(row) == set(FIELDS)
+    for excluded in ("queue", "event_lines", "leaderboard"):
+        assert excluded not in row
+    # The queue is exported as its length, not as the names in it.
+    assert "queue_size" in row
+    assert isinstance(row["queue_size"], int)
+
+
+def test_export_requires_headless(tmp_path):
+    """Refused up front, so the mistake costs a second rather than a setup."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        ["--default", "--export", str(tmp_path / "run.csv")],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code != 0
+    assert "--headless" in result.output
+
+
+def test_export_flags_an_unknown_extension_before_running(tmp_path):
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "--default",
+            "--headless",
+            "--ticks",
+            "1",
+            "--export",
+            str(tmp_path / "run.xlsx"),
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code != 0
+    assert ".jsonl" in result.output
+    assert not (tmp_path / "run.xlsx").exists()
+
+
+def test_export_round_trip_through_the_cli(tmp_path):
+    path = tmp_path / "run.csv"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "--default",
+            "--headless",
+            "--ticks",
+            "5",
+            "--seed",
+            "3",
+            "--export",
+            str(path),
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    rows = list(csv.DictReader(path.read_text().splitlines()))
+    assert len(rows) == 5
+    assert [row["tick"] for row in rows] == ["1", "2", "3", "4", "5"]
+    # The queue length the run reported is the one in the file.
+    assert int(rows[-1]["finished_matches"]) > 0
 
 
 def test_run_headless_reports_queue_length_not_a_list(capsys):

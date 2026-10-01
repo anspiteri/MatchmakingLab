@@ -13,7 +13,7 @@
 		- add basic player info (region, ping, skill-rating, to event feed) ✅
 		- add leaderboard tracking ✅
 	- accompanying minimal test suites
-	- headless mode with logging to files or stdout
+	- headless mode with logging to files or stdout ✅
 	- Request Generator
 		- add new player state transitions to codebase ✅
 		- change generator to operate over a range of requests instead of a fixed number
@@ -49,6 +49,13 @@ I got the sign wrong first. I wrote elapsed as `paused + (now - start)`, on the 
 The tests found their own gaps, which is the part I would keep. Verifying each fix by breaking it on purpose, the first pass caught one of four mutations — and the three misses were all real. The idempotence test reported a pause twice with no clock movement in between, so a version that re-stamped the pause start was indistinguishable from a correct one. And my `-k` filter was `sim_seconds or pause or run_time`, which silently skipped `test_pausing_stops_the_run_clock` because `pausing` does not contain the substring `pause`; the mutation probe reported "3 passed" and I read that as three of three rather than three of four. Both are now caught, and the probe runs four: adding instead of subtracting, letting the clock run through a pause, non-idempotent pause, and starting the clock at construction. The end-to-end test that the spacebar stops the clock is separately verified to fail without the `set_paused` call, at 0.51s against 1.01s.
 
 Speed independence is pinned by driving the same 2.0s span at two tick intervals: run time is 2.0s either way, and the rate is 55/s against 405/s, because 8x the ticks in the same real seconds really is 8x the arrivals. Not exactly 8x, and the test says why — each run's clock starts on its own first tick, so the faster run has 81 request batches to the slower one's 11.
+
+02/10/2026
+Added `--export PATH` to headless runs (branch `dev/1.0-runtime-export`), which finishes the "logging to files or stdout" line that had been sitting unchecked in the backlog since the start. The extension decides the format — `.csv` for a header and a row per tick, `.jsonl` for one JSON object per line with values typed rather than textual — so there is no second flag to keep in step with the first, and an unrecognised suffix is refused at startup naming the ones that work, rather than after an hour of simulation is in the bin.
+
+The columns are the snapshot's scalars. `queue` is exported as its length and `event_lines` and `leaderboard` are left out entirely, which is the one judgement call here worth stating: a hundred leaderboard rows a tick would produce a file mostly made of leaderboard, with the numbers it is meant to inform buried inside it. The `mean_quality` field went at the same time rather than being carried into a new file format — it was declared on `SimSnapshot` and never written or read by anything, and exporting a column that is permanently `0.0` would be worse than deleting it.
+
+Building the export is what turned up the last of the clock bug, and it is the kind that only a second consumer can find. The first row of every exported run read `12158076.8` requests a second. The TUI never showed it, because there the first gap is the tick interval, but headless runs steps back to back, so the first tick's denominator was the few microseconds it took to produce itself. Starting the clock at the end of the first tick fixed the intent and not the symptom: `_elapsed_seconds` was reading the clock again to decide "now", and the microseconds between stamping the start and re-reading were themselves being counted as run time. It needed one reading used for both. Worth recording because the unit test could not have found it — a settable clock returns the same value twice, so the leak is invisible to it and only appears against `perf_counter`. The assertion that did catch it was reading a real exported file.
 
 02/10/2026
 Added the leaderboard (branch `dev/1.0-leaderboard`): a scrolling table of the top 100 players, showing estimated and true skill side by side.

@@ -124,7 +124,9 @@ def test_pausing_through_the_keyboard_stops_the_run_clock():
     async def scenario():
         app = _make_app()
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.3)
+            # The run clock starts at the end of the first tick, so this has to
+            # outlast two of them at 1x before there is any run time to read.
+            await pilot.pause(0.7)
             running = app.harness._elapsed_seconds()
 
             await pilot.press("space")

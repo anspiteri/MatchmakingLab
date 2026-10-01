@@ -120,9 +120,9 @@ class SimHarness:
         # does not enter into it — running at 8x means more ticks inside the same
         # elapsed time, which is exactly what happened.
         #
-        # Started on the first step rather than at construction, so the first
-        # snapshot reports 0.0s and a rate of 0.0 rather than dividing a handful
-        # of requests by the few microseconds spent booting.
+        # Started on the first completed tick, not at construction, so the first
+        # snapshot reports 0.0s and a rate of 0.0 rather than dividing a tick's
+        # arrivals by the few microseconds spent producing it.
         self._run_started: float | None = None
         # Set while paused, cleared on resume; `_paused_seconds` accumulates the
         # spans that have already ended. A pause is not a gap in the record, it
@@ -154,9 +154,12 @@ class SimHarness:
         arrives while already running.
 
         Called by the TUI on pause and resume. A headless run never pauses, so it
-        never calls this and the clock simply runs from the first step.
+        never calls this and the clock simply runs from the first tick.
         """
-        self._start_clock()
+        # Before the first tick completes there is no run time to protect — it
+        # starts at the end of that tick — so an early pause is not a thing yet.
+        if self._run_started is None:
+            return
         if paused:
             if self._paused_at is None:
                 self._paused_at = self._clock()
@@ -164,22 +167,23 @@ class SimHarness:
             self._paused_seconds += self._clock() - self._paused_at
             self._paused_at = None
 
-    def _start_clock(self) -> None:
-        if self._run_started is None:
-            self._run_started = self._clock()
-
-    def _elapsed_seconds(self) -> float:
+    def _elapsed_seconds(self, now: float | None = None) -> float:
         """Real seconds this run has been going, excluding paused time.
 
-        The span from the first step to now contains any pauses that happened
-        inside it, so the completed pause time is subtracted rather than added.
-        Frozen at the moment of the pause while one is in effect, so a snapshot
-        taken during a pause reports the run time as it stood when the pause
-        began rather than drifting with the wall clock.
+        The span from the first completed tick to now contains any pauses that
+        happened inside it, so the completed pause time is subtracted rather than
+        added. Frozen at the moment of the pause while one is in effect, so a
+        reading taken during a pause reports the run time as it stood when the
+        pause began rather than drifting with the wall clock.
+
+        `now` is passed in by the caller that has already read the clock, so that
+        starting the run and measuring it cannot disagree about what time it is.
         """
         if self._run_started is None:
             return 0.0
-        end = self._paused_at if self._paused_at is not None else self._clock()
+        if now is None:
+            now = self._clock()
+        end = self._paused_at if self._paused_at is not None else now
         return (end - self._run_started) - self._paused_seconds
 
     def _record_match_quality(self, newly_finished: list[FinishedMatch]) -> None:
@@ -392,10 +396,15 @@ class SimHarness:
 
         rating_accuracy, rating_spread, true_skill_spread = self._player_quality()
 
-        self._start_clock()
-        sim_seconds = self._elapsed_seconds()
-
         self._tick += 1
+        # One reading, used for both starting the clock and measuring against
+        # it. Two readings would let the microseconds between them count as run
+        # time, which is how the first tick came to report a run time of its own
+        # instead of none at all.
+        now = self._clock()
+        if self._run_started is None:
+            self._run_started = now
+        sim_seconds = self._elapsed_seconds(now)
 
         snapshot = SimSnapshot(
             population_size=len(self.state.player_database),
