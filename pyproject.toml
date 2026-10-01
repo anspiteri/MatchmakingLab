@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "matchmakinglab"
 version = "0.1.0"
@@ -20,14 +24,6 @@ dev = [
 
 [project.scripts]
 matchmakinglab = "matchmakinglab.cli:cli"
-
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
-package-dir = { "" = "src" }
-packages = ["matchmakinglab"]
 
 [tool.pyright]
 venvPath = "."
