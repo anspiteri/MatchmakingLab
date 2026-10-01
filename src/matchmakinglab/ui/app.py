@@ -7,7 +7,13 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Static
 
 from matchmakinglab.platform.sim_harness import SimHarness
-from matchmakinglab.ui.widgets import AnalyticsPanel, EventFeed, StatePanel, StatusBar
+from matchmakinglab.ui.widgets import (
+    AnalyticsPanel,
+    EventFeed,
+    LeaderboardPanel,
+    StatePanel,
+    StatusBar,
+)
 
 BASE_TICK_SECONDS = 0.2
 
@@ -71,6 +77,15 @@ class MatchmakingLabApp(App):
         padding: 1 2;
     }
 
+    /* No padding: the DataTable draws its own borders and padding, and doubling
+       up inside a scroll view leaves the rows visibly inset. */
+    #leaderboard-panel {
+        width: 1fr;
+        height: 1fr;
+        border: round $accent;
+        border-title-align: left;
+    }
+
     #status {
         height: 1;
         dock: bottom;
@@ -105,17 +120,20 @@ class MatchmakingLabApp(App):
             with Vertical(id="right"):
                 yield StatePanel(id="state-panel")
                 yield AnalyticsPanel(id="analytics-panel")
+                yield LeaderboardPanel(id="leaderboard-panel")
         yield StatusBar(id="status")
 
     def on_mount(self) -> None:
         self.feed = self.query_one("#feed", EventFeed)
         self.state_panel = self.query_one("#state-panel", StatePanel)
         self.analytics_panel = self.query_one("#analytics-panel", AnalyticsPanel)
+        self.leaderboard_panel = self.query_one("#leaderboard-panel", LeaderboardPanel)
         self.status = self.query_one("#status", StatusBar)
 
         self.state_panel.border_title = "Platform / State"
         self.analytics_panel.border_title = "Analytics"
         self.feed.border_title = "Event Feed"
+        self.leaderboard_panel.border_title = "Leaderboard"
 
         self._restart_timer()
 
@@ -145,6 +163,8 @@ class MatchmakingLabApp(App):
         self.analytics_panel.rating_accuracy = snapshot.rating_accuracy
         self.analytics_panel.rating_spread = snapshot.rating_spread
         self.analytics_panel.true_skill_spread = snapshot.true_skill_spread
+
+        self.leaderboard_panel.update_rows(snapshot.leaderboard)
 
         self.feed.append_events(snapshot.event_lines)
 

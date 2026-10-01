@@ -11,7 +11,7 @@
 	- display
 		- add player population size to display ✅
 		- add basic player info (region, ping, skill-rating, to event feed) ✅
-		- add leaderboard tracking
+		- add leaderboard tracking ✅
 	- accompanying minimal test suites
 	- headless mode with logging to files or stdout
 	- Request Generator
@@ -35,6 +35,39 @@ Future
 * think about adjusting the BT skill-rating system to be log-likelihood based (26/08/2026)
 
 ## Log
+02/10/2026
+Added the leaderboard (branch `dev/1.0-leaderboard`): a scrolling table of the top 100 players, showing estimated and true skill side by side.
+
+The reason to put both on one row is that separately they each answer a question you cannot check. The estimate is what the matchmaker is actually using, and the true skill is what it is trying to learn; on two separate panels you cannot see whether a player it rates highly really is good, or whether a rising row is learning or noise. Adjacent columns make that a glance, and the `Rating / true spread` line in Analytics is now the summary of what the pair below it is doing.
+
+Where the rows come from was the only real decision. The panel is built from the snapshot, not from the platform state, which is the rule the other panels already follow and the reason the UI cannot accidentally come to depend on the simulation's internals. Sorting happens in the harness at snapshot time, where the full population is in hand. `heapq.nsmallest(100, ...)` rather than a full sort, because I measured it: 0.12ms at 500 players and 0.56ms at 5000, against a 1.9ms tick. The full sort was not going to hurt either, but there is no reason to pay for a total order when only the top slice is ever displayed.
+
+The tie-break is where a leaderboard either works or does not. Every player starts at exactly the base rating, so for the first hundred ticks or so the entire population is tied — and rows that reshuffle every tick, or differ between runs of the same seed, cannot be read at all. Ordering by rating, then wins, then username makes the flat period stable and total: early rows are the players who got matched soonest and won most, which is roughly what a human expects to see while nothing has separated yet. Username last also means the order never depends on dictionary or insertion order.
+
+The cap is a display decision rather than a correctness one, and the two go together: the table scrolls, so keeping 100 rows costs nothing once you have decided you would rather have the 1000th-ranked player reachable by scrolling than not have them. I would rather a long run have a leaderboard you scroll than one that silently stops at 50 and looks complete.
+
+Two smaller things I got wrong first and checked rather than assumed. The panel originally wrapped its table in a `VerticalScroll`, on the reasoning that something had to be scrollable; the table already is one — `DataTable` subclasses `ScrollView` — so the wrapper had a `max_scroll_y` of 0 and did nothing at all. And I asserted the table scrolls rather than taking my own word for it, because the version that silently did not would still have looked correct in every screenshot.
+
+One measurement while I was here, which is free to check. The snapshot now keeps a reference to itself, so a caller holding the harness can read the newest tick back without taking a second one and perturbing the run. Tests use it to assert the panel shows what the harness produced rather than recalculating it on the UI side — the two could otherwise drift together and pass forever.
+
+Two things only running it could tell me. The columns read `est.` and `true`, which I could see was too terse the moment I looked at it, so they are now `est. skill` and `true skill`; that costs 12 characters, and measuring where the table stops fitting without horizontal scrolling moved the threshold from about 104 to about 130 columns, so at 120 columns `region` is now the first thing to slide out of view. Worth knowing rather than discovering on someone else's terminal.
+
+The other was a genuine bug, and the screenshot would never have caught it because a leaderboard sitting at the top of its list looks exactly like one that has just been reset. The table is repopulated every tick, and `clear()` resets the scroll offset to zero, so the panel scrolled and could not be scrolled *to*: scroll down, wait one tick, and you were back at rank 1. The obvious fix is to save and restore the offset, and that would have passed a test checking the offset survived. It is still wrong. Ratings change every tick, so the table reorders every tick, and holding the offset means a different player slides under the reader on each refresh — you would be reading a moving window of strangers. So the panel re-anchors on the *player* at the top of the viewport and scrolls to wherever that player now ranks. If they have fallen out of the top 100 there is nothing to anchor to, and the view stays put rather than jumping.
+
+Then I broke it a second time, which is the part worth keeping. Anchoring on the player was correct as far as it went — the anchored row stayed on screen every single refresh, measured over 150 — and it was still unusable, because the player it was following wanders. The one I happened to be watching moved between ranks 21 and 82 over 200 ticks, and the table changed its offset on 81 of 199 refreshes, travelling 272 rows in total. With only about seven rows visible at the size I was testing at, a one-row correction is a large visual jump. So the panel now holds the player *on screen* rather than tracking them to their new rank: the offset is corrected only when the anchor would otherwise leave the viewport, and then by the smallest amount that avoids it. Same run, same anchor: 20 corrections instead of 81, 46 rows of travel instead of 272, and the player never once off screen. Over 300 ticks of the real harness the offset did not move at all.
+
+The distinction is the whole point and it is worth stating plainly, because both versions pass a test that checks the offset survived. Tracking is not holding. A player who is still visible does not justify moving the table.
+
+Then I broke it a third time, and this one was the worst of the three because it was the fix that looked most like a fix. Holding the offset was right, and I implemented it by clearing the table and putting the offset back afterwards. The offset survived every test I could write. It also made the table visibly snap to the top and jump back down on every tick, because `clear()` really does empty the table — the scrollbar goes to zero and then to where you were, and deferring the restore until after the next layout only made the jump easier to see. The tests were passing while the thing was visibly broken, which is the failure mode worth remembering: I was asserting the offset survived, not that the table stopped moving.
+
+The answer was to stop clearing. `DataTable` keeps its scroll offset through `update_cell`, `remove_row` and `sort`, so the panel now reconciles the table in place: rows are keyed by username, the ones that fell out of the top 100 are removed, the ones that climbed in are added, only the cells that changed are rewritten, and the table is re-sorted into the order the snapshot already produced. A tick touches roughly 50 cells and 3 rows rather than rebuilding 100, and the table never leaves where it was put. Measured over 300 ticks of the real harness the offset did not move at all, and this time there is nothing to restore because nothing was reset.
+
+Sorting on the rating column itself would have been the obvious shortcut and it is wrong: the cells hold the displayed strings, so `"99.0"` sorts above `"118.4"`. The sort key is the rank position held outside the table, which also means the panel does not re-derive the ranking rule and cannot drift away from the harness that owns it.
+
+Worth recording how this was verified, because the first version of the test was worse than the bug. Driving the real app, the new tests failed intermittently — roughly one run in three — which looked like a flaky test and in a sense was one. The cause was not the scroll settling as I first assumed: I tried extra pauses, which made it *worse*, and `force=True`/`immediate=True` combinations, which also made it worse. Measuring instead of guessing showed the app's own interval timer firing between the test's `update_rows` and its assertion, replacing the synthetic rows with a live leaderboard from a barely-started run and moving the offset underneath the reader. Pausing the app first removed it completely.
+
+I also had my own arithmetic wrong repeatedly, and each time the test was wrong rather than the code. A `player_0039`/`player_0040` off-by-one. An assertion that a scroll landed on exactly 40 when it sometimes settled on 41. A first draft of the "does not chase" test that shuffled rows *within* the viewport, which the panel quite correctly does not react to, so it could never have failed for the reason it claimed to. My first measurement of the three candidate strategies was wrong in the same way and reported the panel never scrolling at all — because I had skipped the re-scroll after `clear()`, so I was measuring `clear()`'s reset rather than any strategy's behaviour. Every fix is now verified to fail against four deliberately broken versions: the original no-anchoring, the follow-everything version from my first attempt, no correction at all, and a version that overshoots past the minimum.
+
 02/10/2026
 Made the simulated world's size and load configurable (branch `dev/1.0-sim-config`): `--players` and `--requests MIN:MAX`, both as flags and as questions in the guided setup. Defaults 500 players and 10:50 requests per tick.
 

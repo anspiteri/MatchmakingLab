@@ -64,6 +64,25 @@ class Player:
 
 
 @dataclass
+class LeaderboardEntry:
+    """One ranked row of the leaderboard panel.
+
+    Carries both the estimated rating the matchmaker ranks on and the hidden
+    true skill beside it. The pairing is a display concern: nothing in the
+    simulation reads TRUE_SKILL_KEY, so shipping it in a snapshot exposes it
+    without letting it influence anything.
+    """
+
+    rank: int
+    username: str
+    skill_rating: float
+    true_skill: float
+    wins: int
+    loses: int
+    region: Region
+
+
+@dataclass
 class MatchRequest:
     player: Player
     req_features: dict[str, Any] = field(default_factory=dict)

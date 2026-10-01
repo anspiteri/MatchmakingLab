@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 
+from matchmakinglab.core.models import LeaderboardEntry
+
 
 @dataclass
 class SimSnapshot:
@@ -39,3 +41,7 @@ class SimSnapshot:
     #: the estimate should be measured against.
     true_skill_spread: float = 0.0
     event_lines: list[str] = field(default_factory=list)
+    #: The ranked rows for the leaderboard panel, highest estimated rating first.
+    #: The harness ranks these while it still holds the whole population, so the
+    #: panel receives an ordered result rather than raw state to sort itself.
+    leaderboard: list[LeaderboardEntry] = field(default_factory=list)

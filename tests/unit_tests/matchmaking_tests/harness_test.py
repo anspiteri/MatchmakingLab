@@ -28,7 +28,7 @@ from matchmakinglab.matchmakers.bradley_terry.strategy import (
     BradleyTerry,
 )
 from matchmakinglab.platform.platform import Platform
-from matchmakinglab.platform.sim_harness import SimHarness
+from matchmakinglab.platform.sim_harness import LEADERBOARD_MAX_ROWS, SimHarness
 from tests.helpers import make_skill_player
 
 # A small pool keeps EXISTING (returning-player) requests arriving promptly;
@@ -1046,3 +1046,168 @@ def test_a_quiet_tick_is_a_normal_tick():
     resumed = _run(harness, 20)
 
     assert resumed.population_size >= population_before
+
+
+# ---------- Leaderboard ----------
+
+
+def test_leaderboard_has_rows_on_the_very_first_tick():
+    """The table is populated from tick one, even though nobody has played.
+
+    Every rating is still the base value at this point, so these rows are
+    ordered by the tie-break rather than by merit. Showing them flat is the
+    point: the panel is more useful filling in than blank until it has
+    something to rank.
+    """
+    harness = _make_harness(seed=1)
+
+    snapshot = harness.step()
+
+    assert snapshot.leaderboard
+    assert all(row.wins == 0 and row.loses == 0 for row in snapshot.leaderboard)
+    assert all(row.skill_rating == BASE_SKILL_RATING for row in snapshot.leaderboard)
+
+
+def test_leaderboard_is_sorted_by_rating_highest_first():
+    harness = _make_harness(seed=1)
+
+    snapshot = _run(harness, 400)
+
+    ratings = [r.skill_rating for r in snapshot.leaderboard]
+    assert ratings == sorted(ratings, reverse=True)
+
+
+def test_leaderboard_rank_numbers_are_consecutive_from_one():
+    harness = _make_harness(seed=1)
+
+    snapshot = _run(harness, 400)
+
+    assert [r.rank for r in snapshot.leaderboard] == list(
+        range(1, len(snapshot.leaderboard) + 1)
+    )
+
+
+def test_leaderboard_covers_only_the_top_slice_and_not_the_whole_population():
+    """The cap exists so the table stays a leaderboard rather than a roster."""
+    harness = _make_harness(seed=1, player_count=250)
+
+    snapshot = _run(harness, 400)
+
+    assert len(snapshot.leaderboard) == LEADERBOARD_MAX_ROWS
+    assert snapshot.population_size > LEADERBOARD_MAX_ROWS
+
+
+def test_leaderboard_is_the_highest_rated_players_of_the_real_population():
+    """Cross-check the snapshot against the state, rather than trusting the sort.
+
+    Recomputes the expected top slice independently. A sort by the wrong column,
+    or in the wrong direction, fails here even though the rows still look
+    plausible and internally consistent.
+    """
+    harness = _make_harness(seed=1, player_count=120)
+
+    snapshot = _run(harness, 500)
+
+    expected = sorted(
+        harness.state.player_database.values(),
+        key=lambda p: (
+            -float(p.player_features[SKILL_RATING_KEY]),
+            -p.wins,
+            p.username,
+        ),
+    )[:LEADERBOARD_MAX_ROWS]
+
+    assert [r.username for r in snapshot.leaderboard] == [p.username for p in expected]
+
+
+def test_leaderboard_carries_the_hidden_truth_beside_the_estimate():
+    """Both numbers are on every row — the panel exists to compare them."""
+    harness = _make_harness(seed=1)
+
+    snapshot = _run(harness, 400)
+
+    for row in snapshot.leaderboard:
+        player = harness.state.player_database[row.username]
+        assert row.skill_rating == pytest.approx(
+            float(player.player_features[SKILL_RATING_KEY])
+        )
+        assert row.true_skill == pytest.approx(
+            float(player.player_features[TRUE_SKILL_KEY])
+        )
+
+
+def test_leaderboard_rows_carry_win_loss_and_region():
+    harness = _make_harness(seed=1)
+
+    snapshot = _run(harness, 400)
+
+    row = snapshot.leaderboard[0]
+    player = harness.state.player_database[row.username]
+
+    assert (row.wins, row.loses) == (player.wins, player.loses)
+    assert row.region == player.default_region
+
+
+def test_leaderboard_ties_break_on_wins_then_username():
+    """Flat ratings order by who has played, then by name.
+
+    Every player starts at exactly the base rating, so without a tie-break the
+    first rows would be whichever the heap happened to emit — churning between
+    ticks and differing between runs. Pinned against a fabricated flat
+    population so the tie is actually exercised.
+    """
+    harness = _make_harness(seed=1)
+    harness.step()
+
+    for name in ("zeta", "alpha", "mid"):
+        harness.platform.add_to_matchmaking_queue(
+            name, {"latency": 10, "region": Region.NA}, harness.state
+        )
+
+    # Give one of the tied players a win, so the secondary key has to matter.
+    harness.state.player_database["alpha"].wins = 3
+
+    rows = harness._leaderboard()
+
+    tied = [
+        r
+        for r in rows
+        if r.skill_rating == 100.0 and r.username in ("zeta", "alpha", "mid")
+    ]
+    assert tied[0].username == "alpha"
+
+
+def test_leaderboard_order_is_stable_while_ratings_are_tied():
+    """Two reads of an unchanged population give the same order.
+
+    This is the property the tie-break exists to provide: a table whose rows
+    reshuffle every tick while nothing has changed cannot be read at all.
+    """
+    harness = _make_harness(seed=1)
+    harness.step()
+
+    assert [r.username for r in harness._leaderboard()] == [
+        r.username for r in harness._leaderboard()
+    ]
+
+
+def test_leaderboard_is_reproducible_under_a_seed():
+    def run(seed: int) -> list[str]:
+        harness = _make_harness(seed=seed, player_count=60)
+        return [r.username for r in _run(harness, 300).leaderboard]
+
+    assert run(4) == run(4)
+    assert run(4) != run(5)
+
+
+def test_leaderboard_handles_a_single_player():
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(player_count=2, seed=1),
+        Platform(BradleyTerry()),
+        requests_per_step=2,
+        seed=1,
+    )
+
+    snapshot = harness.step()
+
+    assert len(snapshot.leaderboard) <= 2

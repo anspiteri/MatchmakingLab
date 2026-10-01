@@ -7,7 +7,7 @@ MatchmakingLab is a CLI-driven platform for prototyping and analysing different 
 - `core/` — shared data models, runtime state, and the read-only `SimSnapshot`
 - `matchmakers/` — matchmaking approaches (strategy pattern)
 - `platform/` — platform orchestration, match simulation, and the `SimHarness` facade
-- `ui/` — the Textual TUI (app, event feed, stat panels)
+- `ui/` — the Textual TUI (app, event feed, stat panels, leaderboard)
 - `cli.py` — the CLI entrypoint, wiring boot modes and headless runs together
 
 ```
@@ -42,7 +42,16 @@ Both options are cross-validated at startup rather than per tick: the widest arr
 The `SimHarness` is the single point of contact between the simulation and the display layer. It **owns** the full runtime composition — `RequestGenerator`, `Platform`, `Simulator`, and `PlatformState` — so the UI never reaches into sim internals. It exposes:
 
 - `step() -> SimSnapshot` — advance one tick (generate → enqueue → `platform.tick` → simulate) and return a read-only snapshot.
-- `SimSnapshot` (`core/snapshot.py`) — a plain dataclass with derived facts only (queue/active/finished counts, tick, wall-clock sim seconds, request rate, and a list of feed event lines).
+- `SimSnapshot` (`core/snapshot.py`) — a plain dataclass with derived facts only (queue/active/finished counts, tick, wall-clock sim seconds, request rate, a list of feed event lines, and a ranked top-100 `leaderboard`).
+- `last_snapshot` — the most recent `SimSnapshot`, kept so a caller holding the harness can read back the newest tick without taking a second one and perturbing the run.
+
+### Leaderboard
+
+`SimHarness._leaderboard()` turns the live player database into ranked rows, so the ranking is computed where the full population is in hand and reaches the display as data rather than as state the UI has to sort itself.
+
+Ranking is by estimated rating descending, then wins descending, then username ascending. The last two keys exist because every player starts at exactly the base rating: without a total order, the flat opening of a run reshuffles every tick and differs between runs of the same seed, and the top rows become unreadable. Rows are capped at `LEADERBOARD_MAX_ROWS = 100` and selected with `heapq.nsmallest`, measured at 0.12ms for 500 players and 0.56ms at 5000 against a ~1.9ms tick.
+
+Each row carries `est. skill` and `true skill` side by side. `TRUE_SKILL_KEY` is otherwise invisible to the simulation, and putting it in the snapshot is a display decision only: nothing in the matching or rating path reads it.
 
 Because the display only depends on this stable snapshot surface, `Platform`, `Simulator` and `RequestGenerator` can be refactored freely beneath the boundary.
 
@@ -103,27 +112,28 @@ Both `Platform` and `Simulator` remain strategy-agnostic; all approach-specific 
 
 ## UI: `ui/`
 
-The display is a [Textual](https://github.com/Textualize/textual) application (`ui/app.py`) matching the mockup in `docs/ui.md`:
+The display is a [Textual](https://github.com/Textualize/textual) application (`ui/app.py`) laid out in `docs/ui.md`:
 
 - a header showing the strategy config summary, version and seed;
 - a scrolling **event feed** (`ui/widgets.py` → `EventFeed`, a `RichLog`) of generated/queued/matched/finished events;
 - a **Platform / State** panel (queue, active matches, tick, wall-clock sim time);
 - an **Analytics** panel, in two halves: throughput (matches, avg wait, avg rounds, request rate) above, and match *quality* below — favourite win rate, rating accuracy, and estimated/true spread;
+- a **Leaderboard** panel (`ui/widgets.py` → `LeaderboardPanel`, a `DataTable`): the top 100 players by estimated rating, as a scrolling table of rank, name, `est. skill`, `true skill`, W-L and region. `DataTable` is itself a `ScrollView`, so the panel needs no scroll wrapper — and it only builds the rows currently on screen, so a hundred rows do not cost a hundred repaints per tick;
 - a status bar showing run state, speed multiplier and keybindings.
 
 A tick timer (interval `BASE_TICK_SECONDS / speed`) drives `harness.step()`; the resulting `SimSnapshot` updates reactive widget attributes which repaint the panels. Keybindings: `Space` pause/resume, `j`/`k` double/halve the speed multiplier (min `×1`), `q` quit.
 
 ## State & Models: `core/`
 
-- `models.py` — the shared data models: `Player`, `MatchRequest`, `ActiveMatch`, and `FinishedMatch`, plus feature keys (e.g. latency, region, and `TRUE_SKILL_KEY`) and the `Region` enum. `ActiveMatch` carries the running `score_A`/`score_B`; `Player` carries both the estimated `skill_rating` the strategy reads and the hidden `true_skill` it never sees. Neither the model nor the platform constrains a strategy's feature values to be integers — a strategy whose update needs fractional values should not have to round them away.
+- `models.py` — the shared data models: `Player`, `MatchRequest`, `ActiveMatch`, `FinishedMatch`, and `LeaderboardEntry`, plus feature keys (e.g. latency, region, and `TRUE_SKILL_KEY`) and the `Region` enum. `ActiveMatch` carries the running `score_A`/`score_B`; `Player` carries both the estimated `skill_rating` the strategy reads and the hidden `true_skill` it never sees. Neither the model nor the platform constrains a strategy's feature values to be integers — a strategy whose update needs fractional values should not have to round them away.
 - `state.py` — `PlatformState`, a runtime container holding the player database, the matchmaking queue, and active/finished matches. It is shared between the platform and the harness.
 - `snapshot.py` — `SimSnapshot`, the read-only view of one sim step handed to the display layer.
 
 ## Testing
 
-- Headless sim-loop tests (`tests/unit_tests/matchmaking_tests/harness_test.py`) drive `SimHarness` and assert invariants without Textual, including the arrival-rate range and the seed plumbing described above.
+- Headless sim-loop tests (`tests/unit_tests/matchmaking_tests/harness_test.py`) drive `SimHarness` and assert invariants without Textual, including the arrival-rate range, the seed plumbing described above, and the leaderboard's ordering, cap and tie-breaks. The ordering test recomputes the expected top slice straight from `PlatformState` rather than trusting the sort, so a sort by the wrong column or in the wrong direction fails even though the rows still look plausible.
 - Rating-system tests (`tests/unit_tests/matchmaking_tests/bt_class_test.py`) cover the update arithmetic, that the population geometric mean stays at the base rating, and that the estimated spread stays within a loose bound of the truth's. The last two run real simulations, so they are the slower tests in the suite; each was verified to fail against a deliberately broken update.
-- UI integration tests (`tests/integration_tests/ui_integration_test.py`) boot the Textual app via `App.run_test()` to verify the tick loop, reactive panels, and keybindings end-to-end in a headless terminal.
+- UI integration tests (`tests/integration_tests/ui_integration_test.py`) boot the Textual app via `App.run_test()` to verify the tick loop, reactive panels, keybindings, and the leaderboard panel — including that its table actually scrolls — end-to-end in a headless terminal.
 
 ## General Design Notes
 

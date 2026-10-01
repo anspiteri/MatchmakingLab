@@ -9,11 +9,14 @@ values, so these run headlessly.
 
 import pytest
 
+from matchmakinglab.core.models import LeaderboardEntry, Region
 from matchmakinglab.ui.widgets import (
     AnalyticsPanel,
     EventFeed,
+    LeaderboardPanel,
     StatePanel,
     StatusBar,
+    _format_row,
     _KeyValuePanel,
 )
 
@@ -165,3 +168,105 @@ def test_event_feed_with_no_events_writes_nothing():
     feed.append_events([])
 
     assert feed.written == []
+
+
+# ---------- LeaderboardPanel ----------
+
+
+def _row(
+    rank: int = 1,
+    username: str = "player_0001",
+    skill_rating: float = 118.437,
+    true_skill: float = 160.0,
+    wins: int = 22,
+    loses: int = 4,
+    region: Region = Region.NA,
+) -> LeaderboardEntry:
+    return LeaderboardEntry(
+        rank=rank,
+        username=username,
+        skill_rating=skill_rating,
+        true_skill=true_skill,
+        wins=wins,
+        loses=loses,
+        region=region,
+    )
+
+
+def test_leaderboard_row_renders_as_columns():
+    assert _format_row(_row()) == (
+        "1",
+        "player_0001",
+        "118.4",
+        "160.0",
+        "22-4",
+        "north-america",
+    )
+
+
+def test_leaderboard_row_rounds_ratings_to_one_decimal():
+    """One decimal is the panel's whole precision claim — 118.45 must not read 118.5."""
+
+    assert _format_row(_row(skill_rating=118.449))[2] == "118.4"
+    assert _format_row(_row(skill_rating=118.451))[2] == "118.5"
+
+
+def test_leaderboard_row_shows_the_region_value_not_its_enum_name():
+    assert _format_row(_row(region=Region.OCEANIA))[5] == "oceania"
+
+
+def test_leaderboard_row_handles_a_player_who_has_never_played():
+    row = _row(wins=0, loses=0)
+
+    assert _format_row(row)[4] == "0-0"
+
+
+def test_leaderboard_panel_keeps_rows_before_it_is_mounted():
+    """Set-then-mount is a supported order, so the rows must not be lost.
+
+    The table is built in on_mount, which means anything arriving beforehand has
+    nowhere to be drawn yet. Rows are retained so mounting later fills them.
+    """
+
+    panel = LeaderboardPanel()
+    rows = [_row(rank=1), _row(rank=2, username="player_0002")]
+
+    panel.update_rows(rows)
+
+    assert panel.rows == rows
+
+
+def test_leaderboard_panel_replaces_its_rows_rather_than_appending():
+    """Rows leave the top slice as ratings move; stale ones must not pile up."""
+
+    panel = LeaderboardPanel()
+
+    panel.update_rows([_row(rank=1, username="a"), _row(rank=2, username="b")])
+    panel.update_rows([_row(rank=1, username="c")])
+
+    assert [r.username for r in panel.rows] == ["c"]
+
+
+def test_leaderboard_panel_accepts_an_empty_table():
+    """An empty population must clear the table, not leave the last tick's rows."""
+
+    panel = LeaderboardPanel()
+    panel.update_rows([_row()])
+
+    panel.update_rows([])
+
+    assert panel.rows == []
+
+
+def test_leaderboard_columns_match_the_formatted_row():
+    """A column added without a matching cell would misalign silently."""
+
+    assert len(LeaderboardPanel.COLUMNS) == len(_format_row(_row()))
+    assert LeaderboardPanel.COLUMNS == (
+        "#",
+        "player",
+        "est. skill",
+        "true skill",
+        "W-L",
+        "region",
+    )

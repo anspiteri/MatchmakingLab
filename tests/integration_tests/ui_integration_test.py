@@ -8,15 +8,48 @@ panels and key bindings all work together, without needing a real terminal.
 
 import asyncio
 
+from textual.widgets import DataTable
+
 from matchmakinglab.matchmakers.bradley_terry import generator as gen
 from matchmakinglab.matchmakers.bradley_terry.strategy import BradleyTerry
 from matchmakinglab.platform.platform import Platform
-from matchmakinglab.platform.sim_harness import SimHarness
+from matchmakinglab.platform.sim_harness import LEADERBOARD_MAX_ROWS, SimHarness
 from matchmakinglab.ui.app import MatchmakingLabApp
+from matchmakinglab.ui.widgets import LeaderboardEntry, Region
 
 # A small pool makes returning ("EXISTING") players appear within ~10 ticks
 # instead of the ~50 needed to exhaust the 500-player default.
 SMALL_POOL = 12
+
+
+def _entry(rank: int, username: str) -> LeaderboardEntry:
+    return LeaderboardEntry(
+        rank=rank,
+        username=username,
+        skill_rating=100.0 + rank,
+        true_skill=100.0 + rank,
+        wins=20 - rank,
+        loses=rank,
+        region=Region.NA,
+    )
+
+
+async def _scrolled_to(table: DataTable, pilot, target: int) -> int:
+    """Scroll the leaderboard and wait for the offset to land.
+
+    `scroll_to` lands over a refresh cycle, so a single pause is not reliably
+    enough to read the offset back — measured at roughly one run in ten once the
+    suite is under load. The panel's own refresh path was measured separately
+    and keeps its anchor every time, so this is the harness settling rather
+    than the table misbehaving. Returns the offset it settled on, so a scroll
+    that never lands fails the test's own assertion legibly.
+    """
+    table.scroll_to(y=target, animate=False)
+    for _ in range(20):
+        await pilot.pause()
+        if int(table.scroll_offset.y) == target:
+            break
+    return int(table.scroll_offset.y)
 
 
 def _make_app(
@@ -427,3 +460,260 @@ def test_feed_lines_carry_player_detail():
         assert "skill " in line
         assert "ping: " in line
         assert "region: " in line
+
+
+# ---------- Leaderboard panel ----------
+
+
+def test_leaderboard_panel_is_mounted_and_titled():
+    async def scenario():
+        app = _make_app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.2)
+            title = app.leaderboard_panel.border_title
+            app.exit()
+            await pilot.pause()
+            return title
+
+    assert asyncio.run(scenario()) == "Leaderboard"
+
+
+def test_leaderboard_panel_fills_from_the_snapshot():
+    """The panel shows what the harness produced, not a separate calculation.
+
+    Asserted against the harness's own last snapshot so a change to what the
+    harness computes cannot pass here by both sides drifting the same way.
+    """
+
+    async def scenario():
+        app = _make_app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.6)
+            last = app.harness._last_snapshot
+            assert last is not None
+            shown = [r.username for r in app.leaderboard_panel.rows]
+            expected = [r.username for r in last.leaderboard]
+            app.exit()
+            await pilot.pause()
+            return shown, expected
+
+    shown, expected = asyncio.run(scenario())
+    assert shown == expected
+    assert shown
+
+
+def test_leaderboard_panel_renders_a_real_run_in_order():
+    """Rows come out descending by rating, through the widget's own state."""
+
+    async def scenario():
+        app = _make_app(player_count=60)
+        async with app.run_test(size=(140, 44)) as pilot:
+            for _ in range(120):
+                app._on_tick()
+            await pilot.pause()
+            rows = app.leaderboard_panel.rows
+            app.exit()
+            await pilot.pause()
+            return list(rows)
+
+    rows = asyncio.run(scenario())
+
+    assert rows
+    ratings = [r.skill_rating for r in rows]
+    assert ratings == sorted(ratings, reverse=True)
+    assert [r.rank for r in rows] == list(range(1, len(rows) + 1))
+
+
+def test_leaderboard_panel_holds_a_hundred_rows_without_resizing():
+    """The scroll cap is real: 100 rows are kept, not truncated to what fits.
+
+    Scrolling is what makes keeping them cheap, so the two go together: if this
+    ever drops to the visible count the table would stop being a leaderboard.
+    """
+
+    async def scenario():
+        app = _make_app(player_count=300)
+        async with app.run_test(size=(140, 44)) as pilot:
+            for _ in range(150):
+                app._on_tick()
+            await pilot.pause()
+            count = len(app.leaderboard_panel.rows)
+            app.exit()
+            await pilot.pause()
+            return count
+
+    assert asyncio.run(scenario()) == LEADERBOARD_MAX_ROWS
+
+
+def test_leaderboard_table_scrolls_and_keeps_its_header():
+    """More rows than fit must scroll, with the header staying put.
+
+    DataTable is itself a ScrollView, so this checks the panel is sized to leave
+    the table something to scroll rather than shrinking it to its content.
+    """
+
+    async def scenario():
+        app = _make_app(player_count=300)
+        async with app.run_test(size=(140, 30)) as pilot:
+            for _ in range(150):
+                app._on_tick()
+            await pilot.pause()
+            table = app.leaderboard_panel.query_one("#leaderboard-table", DataTable)
+            header_before = table.get_row_at(0)
+            scrollable = table.max_scroll_y > 0
+            table.scroll_end(animate=False)
+            await pilot.pause()
+            return scrollable, header_before, table.get_row_at(0)
+
+    scrollable, header_before, header_after = asyncio.run(scenario())
+    assert scrollable is True
+    assert header_after == header_before
+
+
+def test_leaderboard_holds_its_offset_across_a_refresh():
+    """A per-tick refresh must not send the table back to the top.
+
+    The panel reconciles rows in place rather than clearing the table, because
+    `clear()` zeroes the scroll offset and made the table visibly snap to the
+    top and jump back on every tick. Several ticks, not one, because the ratings
+    reorder the table throughout and the offset must survive all of it.
+    """
+
+    async def scenario():
+        app = _make_app(player_count=300)
+        async with app.run_test(size=(140, 30)) as pilot:
+            for _ in range(150):
+                app._on_tick()
+            await pilot.pause()
+            table = app.leaderboard_panel.query_one("#leaderboard-table", DataTable)
+
+            start = await _scrolled_to(table, pilot, 40)
+            for _ in range(20):
+                app._on_tick()
+            await pilot.pause()
+            offset = int(table.scroll_offset.y)
+            app.exit()
+            await pilot.pause()
+            return start, offset
+
+    start, offset = asyncio.run(scenario())
+    assert start > 0, "could not scroll the table away from the top"
+    assert offset == start, "the refresh moved the table"
+
+
+def test_leaderboard_does_not_move_while_the_ratings_reorder_it():
+    """The offset is the reader's choice, so it must not drift.
+
+    The rows underneath are live and the top 100 reshuffles every tick. A
+    version that tried to keep a particular player in view would move the
+    table constantly while looking like it was holding still, so this pins the
+    offset against a heavy reorder: the table must not budge.
+    """
+
+    names = [f"player_{index:04d}" for index in range(LEADERBOARD_MAX_ROWS)]
+    reordered = [names[index] for index in range(99, -1, -1)]
+    assert reordered != names, "the reorder has to actually change the table"
+
+    async def scenario():
+        app = _make_app(player_count=300)
+        async with app.run_test(size=(140, 30)) as pilot:
+            # Paused so the app's own interval timer does not repopulate the
+            # table between our update_rows and the assertion - it would
+            # replace the synthetic rows with a live leaderboard and move the
+            # offset out from under the test.
+            app.paused = True
+            panel = app.leaderboard_panel
+            table = panel.query_one("#leaderboard-table", DataTable)
+            panel.update_rows([_entry(i + 1, name) for i, name in enumerate(names)])
+            await pilot.pause()
+
+            start = await _scrolled_to(table, pilot, 40)
+            panel.update_rows([_entry(i + 1, name) for i, name in enumerate(reordered)])
+            await pilot.pause()
+
+            offset = int(table.scroll_offset.y)
+            top = panel.rows[offset].username
+            app.exit()
+            await pilot.pause()
+            return start, offset, top, reordered
+
+    start, offset, top, reordered = asyncio.run(scenario())
+    assert start > 0, "could not scroll the table away from the top"
+    assert offset == start, "the table moved on a pure reorder"
+    assert top == reordered[start], "the offset is showing the wrong rows"
+
+
+def test_leaderboard_keeps_its_offset_when_the_slice_shrinks():
+    """A shorter table clamps to what it can show, and stays there.
+
+    Early in a run the leaderboard is far shorter than a full top 100, and it
+    grows into it. A three-row table cannot show offset 40, so it clamps, and
+    the position it lands on is where the reader is left - rather than the
+    panel remembering 40 and jumping back to it later, which is what a
+    remembered offset did and is the same visible snap this change removed.
+    """
+
+    names = [f"player_{index:04d}" for index in range(LEADERBOARD_MAX_ROWS)]
+
+    async def scenario():
+        app = _make_app(player_count=300)
+        async with app.run_test(size=(140, 30)) as pilot:
+            app.paused = True
+            panel = app.leaderboard_panel
+            table = panel.query_one("#leaderboard-table", DataTable)
+            panel.update_rows([_entry(i + 1, name) for i, name in enumerate(names)])
+            await pilot.pause()
+
+            start = await _scrolled_to(table, pilot, 40)
+            panel.update_rows([_entry(i + 1, name) for i, name in enumerate(names[:3])])
+            await pilot.pause()
+            short_offset = int(table.scroll_offset.y)
+
+            # And back to full: the table must not move once more now that it
+            # has somewhere to be.
+            panel.update_rows([_entry(i + 1, name) for i, name in enumerate(names)])
+            await pilot.pause()
+            offset = int(table.scroll_offset.y)
+            app.exit()
+            await pilot.pause()
+            return start, short_offset, offset
+
+    start, short_offset, offset = asyncio.run(scenario())
+    assert short_offset <= 2, "a three-row table cannot hold offset 40"
+    assert offset == short_offset, "regrowing the table moved it again"
+
+
+def test_leaderboard_keeps_a_scroll_made_between_ticks():
+    """A scroll made between ticks is the reader's, and must be kept.
+
+    Worth pinning separately because it was the reason the panel had to track
+    an offset at all: with the table reconciled in place, a scroll survives the
+    next update because DataTable keeps it, not because anything remembered it.
+    """
+
+    names = [f"player_{index:04d}" for index in range(LEADERBOARD_MAX_ROWS)]
+
+    async def scenario():
+        app = _make_app(player_count=300)
+        async with app.run_test(size=(140, 30)) as pilot:
+            app.paused = True
+            panel = app.leaderboard_panel
+            table = panel.query_one("#leaderboard-table", DataTable)
+            panel.update_rows([_entry(i + 1, name) for i, name in enumerate(names)])
+            await pilot.pause()
+
+            # Scrolled by the reader, with no refresh in between.
+            table.scroll_to(y=55, animate=False)
+            await pilot.pause()
+            chosen = int(table.scroll_offset.y)
+
+            panel.update_rows([_entry(i + 1, name) for i, name in enumerate(names)])
+            await pilot.pause()
+            offset = int(table.scroll_offset.y)
+            app.exit()
+            await pilot.pause()
+            return chosen, offset
+
+    chosen, offset = asyncio.run(scenario())
+    assert chosen == 55, "could not scroll the table in the test"
+    assert offset == 55, "a scroll made between ticks was lost"
