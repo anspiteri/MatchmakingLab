@@ -1,3 +1,5 @@
+from enum import Enum
+
 import click
 
 from matchmakinglab.matchmakers import (
@@ -93,7 +95,16 @@ def _format_choices(enum_type) -> str:
 
 
 def _render_value(value) -> str:
-    """Render an option's value the way a user would type it back."""
+    """Render an option's value the way a user would type it back.
+
+    Enums render by member name, not by ``str()``. These are plain ``Enum``s, so
+    ``str(BTCandidateGenerationMethod.NAIVE)`` is ``"BTCandidateGenerationMethod.
+    NAIVE"`` — and click feeds that string straight back to the parser when the
+    user just presses Enter, which fails to resolve. Rendering the way
+    ``_resolve_enum_value`` reads makes a blank answer round-trip.
+    """
+    if isinstance(value, Enum):
+        return value.name.lower().replace("_", "-")
     if isinstance(value, tuple):
         return ":".join(str(v) for v in value)
     return str(value).lower()

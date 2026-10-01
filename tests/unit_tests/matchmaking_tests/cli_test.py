@@ -12,12 +12,15 @@ from click.testing import CliRunner
 
 from matchmakinglab import cli as cli_module
 from matchmakinglab.cli import (
+    SIM_CONFIG,
     STRATEGIES,
     _build_help,
     _collect_config_from_positional,
     _format_choices,
     _HelpCommand,
+    _parse_option_value,
     _prompt_config,
+    _render_value,
     _resolve_enum_value,
     _run_headless,
     _run_setup,
@@ -613,3 +616,53 @@ def test_help_command_indents_each_line():
     _help_command("first\nsecond").format_help_text(None, formatter)
 
     assert formatter.written == ["  first\n", "  second\n"]
+
+
+# ---------- Rendered defaults round-trip ----------
+
+
+def _every_option() -> list[dict]:
+    return SIM_CONFIG + [
+        opt for entry in STRATEGIES.values() for opt in entry["config"]
+    ]
+
+
+def test_rendered_default_parses_back_to_the_default():
+    """Pressing Enter must not break the guided setup.
+
+    click answers a blank line with the rendered default string and feeds it
+    straight back through the parser, so a value that does not render the way
+    it parses is a crash on the most ordinary interaction there is. These are
+    plain Enums, whose str() is "ClassName.MEMBER" rather than the member's
+    value — rendering by name is what makes the round trip close.
+    """
+    for opt in _every_option():
+        assert _parse_option_value(opt, _render_value(opt["default"])) == opt["default"]
+
+
+def test_rendered_enum_default_is_a_selectable_choice():
+    """The shown default has to be one of the choices the prompt advertises."""
+
+    opt = STRATEGIES["bradley-terry"]["config"][0]
+    shown = _render_value(opt["default"])
+
+    assert shown in _format_choices(opt["type"]).split(", ")
+    assert "BTCandidateGenerationMethod" not in shown
+
+
+def test_guided_setup_accepts_a_blank_answer_for_every_option(mocker):
+    """Drive the prompt with the string click actually returns for Enter.
+
+    The existing guided-setup test supplies explicit answers, so it never sees
+    the default round trip at all. Echoing the rendered default back is what a
+    user pressing Enter does.
+    """
+    for opt in _every_option():
+        prompt = mocker.patch(
+            "matchmakinglab.cli.click.prompt",
+            # A list, not a bare string: click.prompt is one call per option.
+            side_effect=[_render_value(opt["default"])],
+        )
+
+        assert _prompt_config([opt]) == {opt["name"]: opt["default"]}
+        prompt.assert_called_once()
