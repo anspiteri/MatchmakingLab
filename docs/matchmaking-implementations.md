@@ -10,7 +10,7 @@ When applied to matchmaking, the model approaches a pair of players and estimate
 
 Every simulated player is given a real ability, stored under `TRUE_SKILL_KEY`
 as a uniform integer from 40 to 160. The strategy never reads it. It reads only
-`skill_rating`, which starts at 100 and is moved by the update rule below.
+`skill_rating`, a float starting at 100 and moved by the update rule below.
 
 The separation is the point: it gives the lab a ground truth to measure
 estimates against, so "is this matchmaker getting better?" becomes a question
@@ -21,9 +21,13 @@ the hidden abilities are integers across 40-160, so the population's true
 spread is about 120 points — that number is the yardstick used throughout this
 page.
 
-#### The rating update, and what it gets wrong
+#### The rating update
 
-One match in, the rating update is:
+The probability was already right. `r_w / (r_w + r_l)` *is* the Bradley-Terry
+probability in log coordinates, since `sigmoid(log r_w - log r_l)` is that same
+ratio. Only the update was in the wrong space.
+
+The additive rule it replaced:
 
 ```
 probability = winner_rating / (winner_rating + loser_rating)
@@ -33,46 +37,74 @@ winner_rating += adjustment
 loser_rating  = max(1, loser_rating - adjustment)
 ```
 
-It works. Over 600 ticks the estimated ratings correlate with the hidden truth
-at **0.843** — the ranking is genuinely recovered, which is what a matchmaker
-needs in order to pair sensibly.
+A constant number of rating *points* means a shrinking *ratio* as a player
+improves, so the same constant meant something different at every skill level.
+It also has no restoring force: as ratings separate, the winner's probability
+rises, adjustments shrink, and nothing pulls the pair back together. The walk
+spreads until it fills whatever room `LEARNING_RATE` allows.
 
-**The rating scale inflates, though, and the inflation is not a bug in the
-constant.** As ratings separate, a winner's probability rises, so future
-adjustments shrink — but there is no force pulling the two ratings back toward
-the middle. The pair can only spread. Because the step size is proportional to
-the rating itself, the walk grows until it has filled whatever room the learning
-rate allows, and where it stops is set by `LEARNING_RATE`, not by how spread out
-the real players are.
-
-Measured spread of estimates divided by spread of truth:
+Measured spread of estimates over spread of truth, additive rule:
 
 | Learning rate | 600 ticks | 1200 ticks | 2000 ticks |
 |---|---|---|---|
-| 5 (current) | 0.93x | 1.25x | 1.52x |
+| 5 | 0.93x | 1.25x | 1.52x |
 | 10 | 1.43x | 1.71x | 2.02x |
 | 20 | 1.82x | 2.42x | 2.53x |
 | 40 | 2.65x | 2.69x | 3.25x |
 
-Two things follow. The rate was lowered from 10 to 5, which costs nothing in
-accuracy (0.843 against 0.836) and keeps the scale near the truth it is
-estimating for far longer. And the flaw is structural, so the rate only papers
-over it — a longer run at 5 still drifts to 1.5x by 2000 ticks.
+Correlation with the truth was good throughout (0.842 at rate 5 over 600 ticks),
+so the ranking was recovered even while the scale drifted. Lowering the rate
+delayed the drift without removing it: at rate 5 a 2000-tick run still reached
+1.52x, and the first row is *below* 1.0 only because early estimates have barely
+moved off their shared starting point.
 
-Note the first rows are *below* 1.0. That is not correctness either: it is the
-same defect pointed the other way. Early in a run, estimates have barely
-moved from their shared starting point of 100, so the spread is understated.
-The curve passes through parity on its way to inflation.
+The update now steps `log(rating)` by a constant, which is a constant ratio in
+rating space:
 
-**The fix, not taken here: work in log space.** Bradley-Terry is naturally
-multiplicative, so the usual correction is to model `log(rating)` as the
-quantity being updated. A constant step in log space is a constant *ratio* in
-rating space, which is the scale the probability function already assumes, and
-the same step then means the same thing at every level of skill. Over-dispersion
-is a coordinate artefact, not a property of the data. It was left alone here
-because it means re-deriving the update and the reported scale together, and
-the lab can produce meaningful results while it is still a known distortion —
-worth doing before rating numbers are compared across approaches.
+```
+probability = winner_rating / (winner_rating + loser_rating)
+step        = LEARNING_RATE * (1 - probability)
+factor      = exp(step)
+
+winner_rating *= factor
+loser_rating  /= factor      # floored at MIN_SKILL_RATING
+```
+
+`exp` rather than `1 ± step`, because `log(1 + step)` is not `-log(1 - step)`:
+the exponential form is the only one of the pair that moves both sides by equal
+and opposite amounts on the log scale, and the only one that cannot produce a
+negative rating. The product of a matched pair is now exactly conserved, so the
+population's geometric mean sits at the base rating indefinitely — the scale has
+nothing to inflate.
+
+Measured against the same yardstick, log-space update:
+
+| Learning rate | 600 ticks | 2000 ticks | 4000 ticks |
+|---|---|---|---|
+| 0.01 | 0.25x | 0.60x | 0.91x |
+| 0.02 (current) | 0.46x | 1.05x | 1.46x |
+| 0.05 | 1.04x | 1.71x | 2.20x |
+
+At 0.02 the estimated spread reaches parity with the truth by 2000 ticks and
+holds there to within a few percent across seeds, at no cost in accuracy — 0.95
+against the additive rule's 0.96 at the same tick count, and higher than the
+additive rule's 0.84 at 600 ticks. Lower rates converge
+more slowly; higher rates drift, as before. **The fix reduces the drift rather
+than eliminating it.** The remaining inflation is the ordinary random walk of
+accumulating per-match noise, which grows with the square root of matches played
+whatever coordinate it happens in, and a longer run at 0.02 does eventually
+exceed parity. What is gone is the *systematic* part: the step no longer shrinks
+with skill level, so the low end no longer races ahead of the high end.
+
+#### Why ratings are floats
+
+An integer rating cannot carry a relative step small enough to be well behaved.
+At `LEARNING_RATE` 0.01, a 1% move from 100 is 1.0 points and rounds cleanly, but
+the same 1% from 10 is 0.1 points and rounds to *nothing* — so a whole
+population of weak players silently stops updating. Measured directly: at rate
+0.01 with integer ratings, no player's rating ever left 100 while the best ran to
+240, a 2.4x over-dispersion produced purely by rounding. Floats remove the
+threshold; ratings are no longer required to be whole numbers anywhere.
 
 #### Reading the analytics panel
 
@@ -90,8 +122,9 @@ things here that can tell you a matchmaker is doing badly:
   across players who have played. Should climb as the run proceeds.
 - **Rating / true spread** — the estimated and true spreads over the same played
   players, which is the form the over-dispersion above is measured in. Watching
-  the left number start below the right one and then climb past it is watching
-  the documented drift happen.
+  the left number start below the right one and then climb toward it is watching
+  the estimate converge on the truth. It passes parity around 2000 ticks at the
+  current rate, which is the visible form of the fix above.
 
 Two ordering details are load-bearing, and both are pinned by tests in
 `tests/unit_tests/matchmaking_tests/harness_test.py`:
@@ -107,20 +140,31 @@ played. Weighting by match appearances instead would let a busy player carry the
 weight of several and would put the spread figures out of step with the
 over-dispersion numbers above, which are per-player.
 
-#### What the dispersion test is for
+#### What the calibration tests are for
 
-`tests/unit_tests/matchmaking_tests/bt_class_test.py` carries a tripwire
-asserting the estimated spread stays under `MAX_RATING_SPREAD_RATIO` of the
-true spread.
+`tests/unit_tests/matchmaking_tests/bt_class_test.py` carries two tests, and they
+catch different things.
 
-The bound is **loose on purpose**, and that is the only interesting thing about
-it. It is not trying to pin today's numbers — a bound tight enough to do that
-would fail the first time a legitimate change moved them, and would then get
-deleted rather than fixed. It is a smoke alarm for the inflation becoming
-*qualitatively* worse than the drift documented above: a swapped or dropped
-update term, a much larger learning rate, a change of rating scale. The current
-configuration sits at 0.93x against a bound of 2.5x; a learning rate of 40
-reaches 2.65x and trips it.
+`test_rating_update_keeps_the_population_geometric_mean_at_the_base` asserts the
+product-conservation invariant directly. It is exact rather than loose, because
+it is a property of the rule rather than of a particular configuration, and it
+does not care what `LEARNING_RATE` is set to. This is the one that would catch a
+regression to any additive update.
+
+`test_estimated_spread_stays_within_a_loose_bound_of_true_spread` is the
+tripwire, and it runs at 2000 ticks because the drift is not yet visible at 600 —
+every rate in the table above reads under 1.05 there, which would leave the test
+blind to the thing it exists to catch. Its bound is **loose on purpose**. It is
+not trying to pin today's numbers; a bound tight enough to do that would fail the
+first time a legitimate change moved them, and would then get deleted rather than
+fixed. It sits at 1.5x, just under the 1.52x the additive rule measured at the
+same seed and tick count, so reinstating that rule trips it. The current rate
+measures 0.98-1.12x across five seeds, so there is real headroom above it.
+
+Both were checked by deliberately breaking the update: reinstating the additive
+rule fails the conservation test and the tripwire together, while raising
+`LEARNING_RATE` to 0.05 fails the tripwire alone and correctly leaves the
+conservation test passing.
 
 The precise curve belongs in this page, where it can be updated when the
 behaviour changes. The test only needs to notice if it changes by a lot.

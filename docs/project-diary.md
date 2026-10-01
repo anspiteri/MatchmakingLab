@@ -5,7 +5,7 @@
 * finish BT test module ✅
 * implement update player features to close loop ✅
 * Working vertical slice
-	- simulator
+	- simulator ✅
 	- executable application ✅
 		- allow population size and request number to be easily configurable
 	- display
@@ -23,16 +23,44 @@
 * polished readme, docs and visual demo / gifs
 
 Future
-* refactor platform into sim-harness, have strategy & generator be configured as a part of sim harness or determine specific role of platform
+* analyse current architecture and determine pros and cons
 * (**)implement second BT optimisation model
 
 ### Not as Important
+* think about whether the residual random-walk drift in the rating scale can be damped, e.g. a step that decays with a player's match count (01/10/2026)
 * double-check completeness of bt match model math component in test suite (21/08/2026)
 * double-check and possibly document the bt model match tests, ensuring the tests are flexible to changing weights (21/08/2026)
 * assess whether it's worth changing the bt greedy approach to employ a queue-policy that halts matching after a certain time  (24/08/2026)
 * think about adjusting the BT skill-rating system to be log-likelihood based (26/08/2026)
 
 ## Log
+01/10/2026
+Fixed the rating scale's over-dispersion by moving the update into log space (branch `dev/1.0-log-ratings`), which is the structural fix the 30/09 entry left as future work. The deferred item and "the structural fix" turned out to be the same thing, so the two are now one piece of work rather than a follow-up.
+
+The observation that made it cheap: the probability was *already* in the right coordinate. `r_w / (r_w + r_l)` is `sigmoid(log r_w - log r_l)`, so only the update was wrong. Stepping `log(rating)` by a constant is a constant *ratio* in rating space, which is what the probability function assumes anyway:
+
+```
+step   = LEARNING_RATE * (1 - probability)
+factor = exp(step)
+
+winner_rating *= factor
+loser_rating  /= factor
+```
+
+`exp` rather than `1 ± step` because `log(1 + step)` is not `-log(1 - step)`: the exponential form is the only one of the pair that moves both sides equally on the log scale, and the only one that cannot go negative. The product of a matched pair is now exactly conserved, so the population's geometric mean sits at the base rating indefinitely — measured at 100.00 across every rate and every tick count I tried. The scale has nothing left to inflate.
+
+I expected to have to report that this only slowed the drift, and part of that is true: the residual inflation is the ordinary random walk of accumulating per-match noise, growing with the square root of matches played whatever coordinate it is in, so a long enough run at any rate does exceed parity. What is gone is the *systematic* part. The additive step was a constant number of rating points, so it meant a shrinking ratio as a player improved, and the low end of the population outran the high end because of it. Rate 0.02 now reaches parity with the true spread by 2000 ticks (1.05x, 0.98-1.12x over five seeds) and holds, where the additive rule was at 1.52x by 2000 and climbing. Accuracy did not pay for it: 0.95 against 0.96 at the same tick count, and 0.89 against 0.84 at 600 ticks, so the fix is slightly *better* at learning, not just better calibrated.
+
+The part I did not anticipate, and which cost a detour: **integer ratings cannot carry a relative step small enough to be well behaved.** A 1% move from 100 rounds to a whole point and lands; the same 1% from 10 is 0.1 points and rounds to *nothing*, so weak players silently stop updating. I caught it by sweeping too low: at rate 0.01 the minimum rating never left 100 while the best ran to 240 — a 2.4x over-dispersion caused by nothing but rounding, which would have read as a perfectly healthy-looking run. Ratings are floats now, and the type annotations across the test helpers followed. Worth recording because the failure mode is invisible in the aggregate: the mean stayed put and only the extremes looked wrong.
+
+Two calibration tests, deliberately catching different things, and both checked by breaking the update on purpose:
+- geometric mean at base — exact, catches a regression to any additive update, indifferent to the rate
+- estimated spread under 1.5x truth at 2000 ticks — the loose tripwire, sitting just under the additive rule's 1.52x so reinstating that rule trips it
+
+The tripwire had to move from 600 to 2000 ticks: the drift is not visible at 600 under the new rule, so at 600 the test was blind to the thing it exists to catch. Reinstating the additive rule fails both tests; raising the rate to 0.05 fails the tripwire alone and correctly leaves the conservation test passing. That separation is the reason for having two.
+
+The panel's spread pair now shows convergence rather than a drift running away, so `test_spreads_start_below_the_truth_and_later_overshoot_it` asserted the old defect and was rewritten to assert the new behaviour (under at 900 ticks, within 25% of parity by 2000).
+
 30/09/2026
 Made matches actually depend on player skill, which turned out to be the precondition for measuring anything (branch `dev/match-simulation`, 4 commits):
 
@@ -43,8 +71,9 @@ Made matches actually depend on player skill, which turned out to be the precond
 
 The measurement work turned up a result I did not expect. The rating update does learn: estimated ratings correlate with hidden truth at 0.843. But the rating *scale* inflates as the run goes on, because the update has no restoring force that catches up as ratings separate, and its step is proportional to the rating itself. The spread of estimates drifts past the spread of the population it is estimating, and where it stops is decided by the learning rate rather than by the real players. Halving the rate is a mitigation, not a fix — 1.5x over-dispersion remains at 2000 ticks. The real correction is to update `log(rating)` instead, which is left as known future work since it means re-deriving the update and the reported scale together.
 
+**Landed in the 01/10/2026 entry.** The deferral held, and both tables above are the additive rule's, kept as the record of what it did.
+
 Deliberately deferred:
-- **Log-space ratings.** The structural fix for the above. Not blocking — the lab produces meaningful results while this is a documented distortion, but it should land before rating numbers are compared across approaches.
 - **Per-round probability calibration.** `RatingOutcome` currently applies the Bradley-Terry function to a single round, but a round is not a whole match and the per-round probability is not the per-match probability a real player would expect. Guessing a mapping here would be worse than leaving it visibly naive.
 - **A loose dispersion guard** — actually landed, in `bt_class_test.py`. Deliberately loose: a smoke alarm for the inflation becoming qualitatively worse, not a pin on today's numbers. Verified it fires on a real regression (learning rate 40 → 2.65x against a 2.5x bound) and passes with room to spare at the current configuration (0.93x).
 

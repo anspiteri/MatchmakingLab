@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 from itertools import combinations
+from math import exp
 from typing import Any
 
 from matchmakinglab.core.models import (
@@ -20,20 +21,21 @@ SKILL_RATING_KEY = "skill_rating"
 # --- WEIGHTS ---
 # Assumed to be positive scalars
 #
-# Step size for the rating update, against a base rating of 100. Halved from 10
-# after measuring the real simulation: at 10 the rating scale inflated well past
-# the spread of the population it was tracking. Over 600 ticks with hidden skill
-# spread 40-160, a rate of 10 left estimates spanning 9-192 (1.5x the true width)
-# while 5 left them at 48-142 — close to the true range, and at the same time
-# measuring the same correlation between estimate and truth (0.836 vs 0.843).
-#
-# The inflation is a property of ratio space rather than of this constant: the
-# update has no restoring force that catches up as ratings separate, so the walk
-# spreads to fill whatever room the rate allows. See
-# docs/matchmaking-implementations.md before raising this again.
-LEARNING_RATE = 5
+# Step size for the rating update, applied to log(rating) and so a relative step
+# in rating space. 0.02 keeps the estimated spread near parity with the truth it
+# tracks (1.05x at 2000 ticks over five seeds, against 1.52x for the additive
+# rule this replaced) at no cost in accuracy. Measured rates, 150 players,
+# seed 1, 2000 ticks: 0.01 -> 1.03, 0.02 -> 1.03, 0.05 -> 1.71.
+# See docs/matchmaking-implementations.md before raising it.
+LEARNING_RATE = 0.02
 
-BASE_SKILL_RATING = 100
+BASE_SKILL_RATING = 100.0
+
+# Ratings are floats. A relative step small enough to be well behaved is also
+# small enough that an integer rating rounds it away, which stalls the update
+# for a whole population - at LEARNING_RATE 0.01, no player's rating ever left
+# 100 while the best ran to 240. See docs/matchmaking-implementations.md.
+MIN_SKILL_RATING = 1.0
 
 TARGET_PROBABILITY = 50  # optimises for competitiveness i.e. 50/50 skill
 TARGET_THRESHOLD = 10
@@ -69,7 +71,7 @@ class MatchModel:
 
 @dataclass
 class MatchFeatures:
-    skill_rating: int
+    skill_rating: float
     latency: int
     region: Region
     queue_time: int
@@ -108,20 +110,27 @@ class BradleyTerry(MatchmakingStrategy):
         # created, and by the time a match finishes every queued player has
         # already been through _extract_match_features, which rejects an unrated
         # or malformed rating before any of this arithmetic happens.
-        probability = winner.player_features[SKILL_RATING_KEY] / (
-            winner.player_features[SKILL_RATING_KEY]
-            + loser.player_features[SKILL_RATING_KEY]
-        )
+        winner_rating = winner.player_features[SKILL_RATING_KEY]
+        loser_rating = loser.player_features[SKILL_RATING_KEY]
+
+        # r_w / (r_w + r_l) is already the Bradley-Terry probability in log
+        # coordinates, since sigmoid(log r_w - log r_l) is this same ratio. Only
+        # the update was in the wrong space.
+        probability = winner_rating / (winner_rating + loser_rating)
 
         error = 1.0 - probability
 
-        adjustment = round(LEARNING_RATE * error)
+        # A constant step on log(rating), so a constant ratio here. exp rather
+        # than 1 +/- step: log(1 + step) is not -log(1 - step), so the
+        # multiplicative form is the only one of the pair that moves the two
+        # sides by equal and opposite amounts on the log scale, and the only one
+        # that cannot produce a negative rating.
+        factor = exp(LEARNING_RATE * error)
 
-        winner.player_features[SKILL_RATING_KEY] += adjustment
-        loser.player_features[SKILL_RATING_KEY] -= adjustment
-
-        if loser.player_features[SKILL_RATING_KEY] <= 0:
-            loser.player_features[SKILL_RATING_KEY] = 1
+        winner.player_features[SKILL_RATING_KEY] = winner_rating * factor
+        loser.player_features[SKILL_RATING_KEY] = max(
+            MIN_SKILL_RATING, loser_rating / factor
+        )
 
     def run_algorithm(
         self, queue_snapshot: list[MatchRequest]
@@ -256,11 +265,11 @@ def _extract_match_features(request: MatchRequest) -> MatchFeatures:
     if skill_rating is None:
         raise ValueError("A player skill is None")
 
-    if not isinstance(skill_rating, int):
-        raise ValueError("A player skill is not an int")
+    if isinstance(skill_rating, bool) or not isinstance(skill_rating, (int, float)):
+        raise ValueError("A player skill is not a number")
 
-    if skill_rating < 0:
-        raise ValueError("Skill ratings must be non-negative")
+    if skill_rating < MIN_SKILL_RATING:
+        raise ValueError(f"Skill ratings must be at least {MIN_SKILL_RATING}")
 
     latency = request.req_features.get(LATENCY_KEY)
 
@@ -301,7 +310,7 @@ def _match_cost_function(
     return competitiveness + latency_cost + region_difference - queue_time_benefit
 
 
-def _bt_probability(i: int, j: int) -> int:
+def _bt_probability(i: float, j: float) -> int:
     if i + j == 0:  # divide by 0 case
         return 50
 

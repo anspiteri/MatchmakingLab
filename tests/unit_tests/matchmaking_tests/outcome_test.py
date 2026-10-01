@@ -28,7 +28,7 @@ MODELS = [
 ]
 
 
-def _team(*skills: int) -> list:
+def _team(*skills: float) -> list:
     return [
         make_skill_player(
             i,

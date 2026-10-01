@@ -49,6 +49,8 @@ A strategy defines the full matchmaking lifecycle (see `base_strategy.py`):
 - `run_algorithm(queue_snapshot)` — given the queued requests, return the matches to form and the players still waiting.
 - `update_player_features(finished_match)` — update player state from completed match results, closing the feedback loop.
 
+Bradley-Terry's rating is a float and its update is multiplicative — a constant step on `log(rating)`, which conserves the product of a matched pair. Both are load-bearing for the reported rating scale; see [matchmaking implementations](./matchmaking-implementations.md).
+
 ### Request generators
 Each approach also expects specific input data (player features and request features). A coupled `RequestGenerator` (see `base_generator.py`) is responsible for producing that data. Generators are tightly coupled to their approach because the data must match what the strategy consumes.
 
@@ -88,13 +90,14 @@ A tick timer (interval `BASE_TICK_SECONDS / speed`) drives `harness.step()`; the
 
 ## State & Models: `core/`
 
-- `models.py` — the shared data models: `Player`, `MatchRequest`, `ActiveMatch`, and `FinishedMatch`, plus feature keys (e.g. latency, region, and `TRUE_SKILL_KEY`) and the `Region` enum. `ActiveMatch` carries the running `score_A`/`score_B`; `Player` carries both the estimated `skill_rating` the strategy reads and the hidden `true_skill` it never sees.
+- `models.py` — the shared data models: `Player`, `MatchRequest`, `ActiveMatch`, and `FinishedMatch`, plus feature keys (e.g. latency, region, and `TRUE_SKILL_KEY`) and the `Region` enum. `ActiveMatch` carries the running `score_A`/`score_B`; `Player` carries both the estimated `skill_rating` the strategy reads and the hidden `true_skill` it never sees. Neither the model nor the platform constrains a strategy's feature values to be integers — a strategy whose update needs fractional values should not have to round them away.
 - `state.py` — `PlatformState`, a runtime container holding the player database, the matchmaking queue, and active/finished matches. It is shared between the platform and the harness.
 - `snapshot.py` — `SimSnapshot`, the read-only view of one sim step handed to the display layer.
 
 ## Testing
 
 - Headless sim-loop tests (`tests/unit_tests/matchmaking_tests/harness_test.py`) drive `SimHarness` and assert invariants without Textual.
+- Rating-system tests (`tests/unit_tests/matchmaking_tests/bt_class_test.py`) cover the update arithmetic, that the population geometric mean stays at the base rating, and that the estimated spread stays within a loose bound of the truth's. The last two run real simulations, so they are the slower tests in the suite; each was verified to fail against a deliberately broken update.
 - UI integration tests (`tests/integration_tests/ui_integration_test.py`) boot the Textual app via `App.run_test()` to verify the tick loop, reactive panels, and keybindings end-to-end in a headless terminal.
 
 ## General Design Notes

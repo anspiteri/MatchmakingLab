@@ -298,7 +298,7 @@ def test_new_player_event_reports_base_skill_ping_and_region():
     snapshot = harness.step()
 
     assert snapshot.event_lines[0] == (
-        f"generated NEW newbie - skill {BASE_SKILL_RATING}, ping: 42, region: europe"
+        f"generated NEW newbie - skill {BASE_SKILL_RATING:.1f}, ping: 42, region: europe"
     )
 
 
@@ -329,7 +329,7 @@ def test_existing_player_event_reports_that_players_own_skill():
     snapshot = harness.step()
 
     assert snapshot.event_lines[0] == (
-        "generated EXISTING veteran - skill 137, ping: 7, region: asia"
+        "generated EXISTING veteran - skill 137.0, ping: 7, region: asia"
     )
     # The returning player keeps their rating; it is not reset on re-entry.
     assert player.player_features[SKILL_RATING_KEY] == 137
@@ -358,7 +358,12 @@ def test_one_generation_event_per_request_and_no_separate_queued_event():
 
 
 def test_reported_skill_matches_the_skill_in_the_emitted_request():
-    """Each EXISTING event reports the rating carried by that request."""
+    """Each EXISTING event reports the rating carried by that request.
+
+    The feed rounds a fractional rating for display, so this compares to within
+    that rounding rather than exactly - a stale or re-read rating would be off
+    by far more.
+    """
 
     class RecordingGenerator(RequestGenerator):
         """Wraps the real generator, remembering the batch it last emitted."""
@@ -377,7 +382,7 @@ def test_reported_skill_matches_the_skill_in_the_emitted_request():
     harness = SimHarness(
         generator, Platform(BradleyTerry()), requests_per_step=4, seed=3
     )
-    pattern = re.compile(r"^generated EXISTING (\S+) - skill (\d+), ")
+    pattern = re.compile(r"^generated EXISTING (\S+) - skill ([\d.]+), ")
 
     checked = 0
     for _ in range(30):
@@ -391,8 +396,8 @@ def test_reported_skill_matches_the_skill_in_the_emitted_request():
         for line in snapshot.event_lines:
             match = pattern.match(line)
             if match:
-                username, skill = match.group(1), int(match.group(2))
-                assert emitted[username] == skill
+                username, skill = match.group(1), float(match.group(2))
+                assert emitted[username] == pytest.approx(skill, abs=0.05)
                 checked += 1
 
     assert checked  # the run really did produce returning players
@@ -672,20 +677,24 @@ def test_spreads_are_taken_over_the_same_played_players():
     assert snapshot.true_skill_spread == pytest.approx(max(truths) - min(truths))
 
 
-def test_spreads_start_below_the_truth_and_later_overshoot_it():
-    """The panel shows the documented drift, so it must actually be visible.
+def test_spreads_start_below_the_truth_and_close_on_it():
+    """The panel shows the estimate converging on the truth, not running past it.
 
     Early on every estimate sits at the shared base rating, so the estimated
-    spread starts well under the truth and climbs. Crossing above it is the
-    over-dispersion the previous commit documented, and putting these two numbers
-    side by side is the point of showing both. Measured to be reliable across
-    seeds: still under at 600 ticks, over from 900 on.
+    spread starts well under the truth and climbs as the run learns. Under the
+    additive update this crossed above the truth and kept going - the
+    over-dispersion the log-space update replaced - so the pair now converging
+    is the visible consequence of that change. Measured at seed 1: 0.42x of the
+    truth at 600 ticks, still under at 900, 1.03x by 2000.
     """
     harness = _make_harness(seed=1, player_count=150)
 
     early = _run(harness, 50)
-    late = _run(harness, 850)
+    mid = _run(harness, 850)
+    late = _run(harness, 1100)
 
     assert early.rating_spread < early.true_skill_spread
-    assert late.rating_spread > late.true_skill_spread
+    assert mid.rating_spread < mid.true_skill_spread
+    # Close to parity without having run away in either direction.
+    assert late.rating_spread == pytest.approx(late.true_skill_spread, rel=0.25)
     assert late.rating_accuracy > early.rating_accuracy

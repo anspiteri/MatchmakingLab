@@ -56,11 +56,11 @@ def make_skill_player(
     player_id: int = 0,
     username: str = "player",
     region: Region = Region.OCEANIA,
-    skill_rating: int = BASE_SKILL_RATING,
+    skill_rating: float = float(BASE_SKILL_RATING),
     status: PlayerStatus = PlayerStatus.IDLE,
     wins: int = 0,
     loses: int = 0,
-    true_skill: int | None = None,
+    true_skill: float | None = None,
 ) -> Player:
     """Build a Player carrying a Bradley-Terry skill rating.
 

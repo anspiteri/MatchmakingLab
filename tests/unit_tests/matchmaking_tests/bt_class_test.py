@@ -7,6 +7,7 @@ strategy. These functions are concerned with providing an interface for the
 strategy within the platform execution environment.
 """
 
+import math
 from itertools import combinations
 from unittest.mock import Mock
 
@@ -23,6 +24,7 @@ from matchmakinglab.core.models import (
 )
 from matchmakinglab.matchmakers.bradley_terry.strategy import (
     BASE_SKILL_RATING,
+    MIN_SKILL_RATING,
     SKILL_RATING_KEY,
     BradleyTerry,
     BTCandidateGenerationMethod,
@@ -68,16 +70,21 @@ def test_setup_player_features(candidate_generation_method, optimisation_method)
 @pytest.mark.parametrize(
     "winner_skill, loser_skill, expected_winner_after, expected_loser_after",
     [
-        # Equal skill — 50/50 probability, adjustment = 2 at LEARNING_RATE 5
-        (100, 100, 102, 98),
-        # Winner stronger — probability = 0.6, adjustment = 2
-        (150, 100, 152, 98),
-        # Underdog wins — probability = 0.4, adjustment = 3
-        (100, 150, 103, 147),
-        # Loser floor at 1 — loser goes clearly negative
-        (4, 1, 5, 1),
-        # No floor — loser survives with small positive skill
-        (9, 2, 10, 1),
+        # Equal skill - 50/50 probability, so a 1% step either way
+        (100, 100, 101.005, 99.005),
+        # Winner stronger - probability 0.6, so a 0.8% step
+        (150, 100, 151.205, 99.203),
+        # Underdog wins - probability 0.4, so a 1.2% step
+        (100, 150, 101.207, 148.211),
+        # The step is proportional, so a tenth of the rating moves a tenth as
+        # far: the same 1% that takes 100 to 101 takes 10 to 10.1. An additive
+        # step would have moved this pair by a full point, or not at all.
+        (10, 10, 10.101, 9.900),
+        # Floor at MIN_SKILL_RATING - a pair already at the bottom of the scale
+        # would otherwise cross it. Only reachable at the very bottom: at
+        # LEARNING_RATE 0.02 the largest step is 2%, so nothing above a rating
+        # of ~1.02 can reach the floor in one update.
+        (1, 1, 1.010, MIN_SKILL_RATING),
     ],
 )
 def test_update_player_features(
@@ -92,8 +99,38 @@ def test_update_player_features(
 
     bt_instance.update_player_features(match)
 
-    assert winner.player_features[SKILL_RATING_KEY] == expected_winner_after
-    assert loser.player_features[SKILL_RATING_KEY] == expected_loser_after
+    assert winner.player_features[SKILL_RATING_KEY] == pytest.approx(
+        expected_winner_after, abs=0.001
+    )
+    assert loser.player_features[SKILL_RATING_KEY] == pytest.approx(
+        expected_loser_after, abs=0.001
+    )
+
+
+def test_update_player_features_conserves_the_product_of_the_two_ratings():
+    """The step is multiplicative, so the pair's product is left alone.
+
+    This is the invariant the log-space rule exists to provide: the scale cannot
+    inflate because there is nothing to inflate. An additive step conserves the
+    *sum* instead, which only looks similar until the ratings separate.
+    """
+    bt_instance = BradleyTerry()
+
+    winner = make_skill_player(0, "winner", Region.OCEANIA, 137.5)
+    loser = make_skill_player(1, "loser", Region.OCEANIA, 64.25)
+
+    before = 137.5 * 64.25
+
+    bt_instance.update_player_features(
+        FinishedMatch(match_length=0, winning_team=[winner], losing_team=[loser])
+    )
+
+    after = (
+        winner.player_features[SKILL_RATING_KEY]
+        * loser.player_features[SKILL_RATING_KEY]
+    )
+
+    assert after == pytest.approx(before, rel=1e-12)
 
 
 def test_update_player_features_does_not_touch_win_loss_record():
@@ -319,45 +356,67 @@ def test_rating_learning_is_reproducible_under_a_seed():
     )
 
 
-# ---------- Over-dispersion tripwire ----------
+# ---------- Rating scale calibration ----------
 #
-# The rating scale inflates in ratio space: the update has no restoring force
-# that catches up as the ratings separate, so the spread of estimates drifts
-# above the spread of the population being estimated. This is a known and
-# documented limitation (docs/matchmaking-implementations.md), not a bug to be
-# chased here.
-#
-# The bound below is deliberately loose. Its job is to be a smoke alarm that
-# fires if the inflation gets materially worse — a swapped update rule, a much
-# larger learning rate, a change of rating scale — not to pin the current
-# numbers, which would make the test brittle and get deleted the first time a
-# legitimate change moved them.
-#
-# Measured ratio of estimated spread to true spread, one seed, 150 players:
-#
-#     ticks      600   1200   2000
-#     K=5       0.93   1.25   1.52
-#     K=10      1.43   1.71   2.02
-#     K=20      1.82   2.42   2.53
-#     K=40      2.65   2.69   3.25
-#
-# So the current configuration sits near parity at 600 ticks and is well clear of
-# the bound below; anything in the K=40 column is not.
-
-MAX_RATING_SPREAD_RATIO = 2.5
+# The update is a constant step on log(rating), so it moves a rating by a fixed
+# *ratio* and leaves the product of a matched pair alone. Two things are worth
+# pinning: the scale must not inflate, and the rule's own invariant must hold.
 
 
-def test_estimated_spread_stays_within_a_loose_bound_of_true_spread():
-    played = _played_players(_harness(600, seed=1))
+def _dispersion(harness) -> float:
+    played = _played_players(harness)
 
     estimated = [p.player_features[SKILL_RATING_KEY] for p in played]
     true = [p.player_features[TRUE_SKILL_KEY] for p in played]
 
-    ratio = (max(estimated) - min(estimated)) / (max(true) - min(true))
+    return (max(estimated) - min(estimated)) / (max(true) - min(true))
+
+
+def test_rating_update_keeps_the_population_geometric_mean_at_the_base():
+    """The scale is anchored: every update is a ratio, so nothing inflates.
+
+    The old additive rule conserved the *sum* of the ratings instead, which held
+    only until the spread grew large enough for the floor to start clamping. This
+    is the structural form of the fix, so it is worth asserting directly rather
+    than inferring from the spread. The floor would break it if it ever bound -
+    at this rate it does not, the lowest rating seen over 2000 ticks is ~47.
+    """
+    played = _played_players(_harness(2000, seed=1))
+
+    ratings = [p.player_features[SKILL_RATING_KEY] for p in played]
+    geometric_mean = math.exp(sum(math.log(r) for r in ratings) / len(ratings))
+
+    assert geometric_mean == pytest.approx(BASE_SKILL_RATING, rel=1e-9)
+
+
+# The bound below is deliberately loose. Its job is to be a smoke alarm that
+# fires if the inflation comes back - a swapped update rule, a much larger
+# learning rate, a change of rating scale - not to pin the current numbers, which
+# would make the test brittle and get deleted the first time a legitimate change
+# moved them.
+#
+# Measured ratio of estimated spread to true spread, seed 1, 150 players, at
+# 2000 ticks, against the log-space update at several rates:
+#
+#     LEARNING_RATE   0.01   0.02   0.05
+#     dispersion      1.03   1.03   1.71
+#
+# The bound sits just under the 1.52x the replaced additive rule measured at the
+# same seed and tick count, so reinstating that rule trips it. Over five seeds
+# the current rate measures 0.98-1.12, so there is real headroom above it.
+#
+# 2000 ticks rather than 600 because the drift is not yet visible at 600: every
+# rate in the table reads under 1.05 there, which would make the test blind to
+# the thing it exists to catch.
+
+MAX_RATING_SPREAD_RATIO = 1.5
+
+
+def test_estimated_spread_stays_within_a_loose_bound_of_true_spread():
+    ratio = _dispersion(_harness(2000, seed=1))
 
     assert ratio < MAX_RATING_SPREAD_RATIO, (
-        f"Estimated rating spread is {ratio:.2f}x the true spread "
-        f"({max(estimated) - min(estimated)} points against "
-        f"{max(true) - min(true)}). Inflation has grown past what the ratio-space "
-        f"update is known to do — see docs/matchmaking-implementations.md."
+        f"Estimated rating spread is {ratio:.2f}x the true spread. Inflation has "
+        f"grown past what the log-space update is known to do - see "
+        f"docs/matchmaking-implementations.md."
     )

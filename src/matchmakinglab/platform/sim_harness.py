@@ -161,12 +161,12 @@ class SimHarness:
 
             if req["is_new"]:
                 events.append(
-                    f"generated NEW {user} - skill {BASE_SKILL_RATING}, ping: {ping}, region: {region}"
+                    f"generated NEW {user} - skill {BASE_SKILL_RATING:.1f}, ping: {ping}, region: {region}"
                 )
             else:
                 skill = req["req_features"][SKILL_RATING_KEY]
                 events.append(
-                    f"generated EXISTING {user} - skill {skill}, ping: {ping}, region: {region}"
+                    f"generated EXISTING {user} - skill {skill:.1f}, ping: {ping}, region: {region}"
                 )
 
             self.platform.add_to_matchmaking_queue(

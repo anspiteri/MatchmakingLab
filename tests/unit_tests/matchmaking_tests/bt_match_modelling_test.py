@@ -230,6 +230,19 @@ def test_model_match(
                 queue_time=10,
             ),
         ),
+        # a rating the update rule has already moved off the base
+        (
+            123.456,
+            50,
+            Region.OCEANIA,
+            10,
+            MatchFeatures(
+                skill_rating=123.456,
+                latency=50,
+                region=Region.OCEANIA,
+                queue_time=10,
+            ),
+        ),
     ],
 )
 def test_extract_match_features(
@@ -254,9 +267,11 @@ def test_extract_match_features(
 
 @pytest.mark.parametrize(
     "skill_rating",
-    [None, -1, 1.0],
+    [None, -1, 0, 1.0e-9, "100"],
 )
 def test_extract_match_features_invalid_skill(skill_rating):
+    # 1.0 is no longer invalid: ratings are floats, since a relative step small
+    # enough to be well behaved rounds away against an integer rating.
     player = make_skill_player(0, "test_user", Region.OCEANIA, skill_rating)
 
     request = MatchRequest(
@@ -266,6 +281,16 @@ def test_extract_match_features_invalid_skill(skill_rating):
             REGION_KEY: Region.OCEANIA,
         },
     )
+
+    with pytest.raises(ValueError):
+        _extract_match_features(request)
+
+
+def test_extract_match_features_rejects_a_bool_rating():
+    """bool is an int subclass, so True would otherwise pass as a rating of 1."""
+    player = make_skill_player(0, "test_user", Region.OCEANIA, True)
+
+    request = MatchRequest(player, {LATENCY_KEY: 10, REGION_KEY: Region.OCEANIA})
 
     with pytest.raises(ValueError):
         _extract_match_features(request)
