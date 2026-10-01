@@ -47,7 +47,9 @@ The `SimHarness` is the single point of contact between the simulation and the d
 Because the display only depends on this stable snapshot surface, `Platform`, `Simulator` and `RequestGenerator` can be refactored freely beneath the boundary.
 
 ### Arrival rate
-Each tick draws how many requests to generate, from an inclusive range (`request_range`, default 10–50) or from a fixed `requests_per_step` when one is given. The draw happens in the harness rather than in a generator, because arrival rate is a property of the simulated world rather than of any one matchmaker: every strategy gets it without its generator knowing, and `generate_requests(n, db)` stays honest about its "give me exactly n" contract.
+Each tick draws how many requests to generate, from an inclusive range (`request_range`, default 10–50) or from a fixed `requests_per_step` when one is given.
+
+The range's minimum may be 0, so a tick can generate nothing. Nothing downstream divides by the arrival count, so an empty batch is an ordinary tick that costs the players it would have sent out to play and little else; `0:50` models arrivals in lulls, which a range starting high cannot express. The draw happens in the harness rather than in a generator, because arrival rate is a property of the simulated world rather than of any one matchmaker: every strategy gets it without its generator knowing, and `generate_requests(n, db)` stays honest about its "give me exactly n" contract.
 
 Two measured caveats, both of which shaped the defaults:
 

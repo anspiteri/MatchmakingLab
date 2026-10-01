@@ -480,7 +480,6 @@ def test_cli_flags_override_the_default_setup(mocker):
         (["--requests", "50:10"], "below its minimum"),
         (["--requests", "10"], "Expected MIN:MAX"),
         (["--requests", "ten:fifty"], "Expected MIN:MAX"),
-        (["--requests", "0:10"], "minimum must be at least 1"),
         (["--players", "1"], "must be at least 2"),
         (["--players", "8", "--requests", "1:50"], "widest batch must fit"),
     ],
@@ -490,6 +489,23 @@ def test_cli_rejects_an_unusable_setup(args, expected):
 
     assert result.exit_code != 0
     assert expected in result.output
+
+
+def test_cli_accepts_a_request_range_starting_at_zero(mocker):
+    """A minimum of 0 is the point of a range: some ticks arrive nobody.
+
+    Pressing past the guard is what makes the world interesting — a lumpy
+    arrival pattern rather than a metronome — so it is allowed rather than
+    treated as a typo.
+    """
+    mocker.patch("matchmakinglab.cli._run_headless")
+
+    result = CliRunner().invoke(
+        cli, ["--default", "--headless", "--ticks", "1", "--requests", "0:10"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "requests: 0:10" in result.output
 
 
 def test_cli_accepts_a_dash_separated_request_range(mocker):

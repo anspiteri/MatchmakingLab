@@ -883,12 +883,13 @@ def test_request_draws_do_not_disturb_the_seeded_player_pool():
     assert skills(fixed) == skills(ranged)
 
 
-@pytest.mark.parametrize("bad", [(0, 10), (10, 0), (50, 10), (-1, 5)])
+@pytest.mark.parametrize("bad", [(10, 0), (50, 10), (-1, 5)])
 def test_an_unusable_request_range_is_refused(bad):
     """A range that cannot be drawn from is rejected at construction.
 
     These would otherwise surface as a silent 0-arrival or an exception deep in
-    the generator partway into a run.
+    the generator partway into a run. ``(0, 10)`` was on this list until it was
+    deliberately allowed; see the test below.
     """
     with pytest.raises(ValueError):
         SimHarness(
@@ -969,3 +970,79 @@ def test_an_explicitly_seeded_generator_keeps_its_own_seed():
     assert first == gen.BradleyTerryGenerator(
         player_count=40, seed=99
     ).generate_requests(5, {})
+
+
+def test_a_request_range_starting_at_zero_is_accepted():
+    """A minimum of 0 is the feature, not a mistake to guard against.
+
+    It makes some ticks arrive nobody, which is the one thing a fixed count and
+    a range both starting high cannot express.
+    """
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(player_count=200, seed=1),
+        Platform(BradleyTerry()),
+        seed=1,
+        request_range=(0, 50),
+    )
+
+    assert harness.request_range == (0, 50)
+
+
+def test_a_zero_minimum_actually_produces_quiet_ticks():
+    """Over enough ticks a 0:50 range has to draw a zero at least once.
+
+    Pinned because the range would still satisfy every other test if the draw
+    were quietly clamped up to 1 — the guard would have moved rather than
+    relaxed, and the world would still never be quiet.
+    """
+    harness = SimHarness(
+        gen.BradleyTerryGenerator(player_count=200, seed=1),
+        Platform(BradleyTerry()),
+        seed=1,
+        request_range=(0, 5),
+    )
+
+    per_tick = []
+    previous = 0
+    for _ in range(200):
+        harness.step()
+        per_tick.append(harness._total_requests - previous)
+        previous = harness._total_requests
+
+    assert min(per_tick) == 0, "a 0:5 range over 200 ticks never drew zero"
+    assert max(per_tick) > 0
+
+
+def test_a_quiet_tick_is_a_normal_tick():
+    """A tick that generates nothing must still produce a usable snapshot.
+
+    This is the reason relaxing the bound is safe: nothing downstream divides by
+    the arrival count, so an empty batch costs nothing but the players it would
+    have sent out to play. Forced rather than drawn, so the quiet tick is the
+    one being tested rather than one that happened to come up.
+    """
+    harness = _make_harness(seed=1)
+    _run(harness, 50)
+
+    previous = _run(harness, 49)
+    population_before = len(harness.state.player_database)
+    queue_before = len(harness.state.get_matchmaking_queue())
+    total_before = harness._total_requests
+
+    harness.requests_per_step = 0
+    quiet = harness.step()
+
+    assert quiet.population_size == population_before
+    assert len(quiet.queue) == queue_before
+    assert quiet.tick == previous.tick + 1
+    # No arrivals, so the cumulative request count is untouched. Matches already
+    # in flight still finish, so the snapshot is not empty — it is just quiet.
+    assert harness._total_requests == total_before
+    assert quiet.avg_wait >= 0.0
+    assert quiet.finished_matches >= previous.finished_matches
+
+    # And the run carries on normally afterwards.
+    harness.requests_per_step = None
+    resumed = _run(harness, 20)
+
+    assert resumed.population_size >= population_before

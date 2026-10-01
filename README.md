@@ -100,6 +100,10 @@ The entrypoint is the `matchmakinglab` command (registered as the `matchmakingla
   range (default `10:50`). A fixed rate is the degenerate case:
   `matchmakinglab --default --requests 10:10`
 
+  `MIN` may be `0`, which lets some ticks arrive nobody:
+  `matchmakinglab --default --requests 0:50` gives a world with lulls in it,
+  rather than the metronome a range starting high produces.
+
   Both of these are also asked for in the interactive guided setup, where a flag
   you passed skips its own question. Note that the widest batch must fit in the
   population, so `--players 8 --requests 1:50` is refused at startup rather than

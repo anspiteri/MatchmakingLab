@@ -42,10 +42,16 @@ def _validate_request_range(request_range: tuple[int, int]) -> tuple[int, int]:
     """Check an arrival range, returning it unchanged.
 
     Inclusive on both ends, so ``(10, 50)`` can draw any of 41 counts.
+
+    A minimum of 0 is allowed, and is the point of a range over a fixed count:
+    it makes some ticks quiet. An empty batch generates nothing, which costs
+    nothing downstream — no division by the arrival count anywhere — so the only
+    thing it changes is how many players each gets to play. ``0:50`` is a world
+    with lulls in it; ``50:50`` is a metronome.
     """
     low, high = request_range
-    if low < 1:
-        raise ValueError(f"Request range minimum must be at least 1, got {low}")
+    if low < 0:
+        raise ValueError(f"Request range minimum cannot be negative, got {low}")
     if high < low:
         raise ValueError(f"Request range maximum {high} is below its minimum {low}")
     return low, high
