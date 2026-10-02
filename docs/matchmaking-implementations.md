@@ -96,6 +96,14 @@ whatever coordinate it happens in, and a longer run at 0.02 does eventually
 exceed parity. What is gone is the *systematic* part: the step no longer shrinks
 with skill level, so the low end no longer races ahead of the high end.
 
+**This ships in 1.0 undamped**, on the reasoning recorded in
+[rating-drift.md](./rating-drift.md) — the ordering is what the cost function acts
+on and it stays correct, so the residual is a calibration limitation rather than a
+defect. That document also carries an open question about whether the drift costs
+*pairing quality* rather than only calibration, which is untested and would
+reverse the decision. Read it before trusting the figures above as a property of
+any run beyond the configuration they were measured at.
+
 #### Why ratings are floats
 
 An integer rating cannot carry a relative step small enough to be well behaved.
@@ -186,7 +194,8 @@ should, which is the strongest confirmation the random-walk explanation of the
 residual drift is the right one. But it does mean a long or heavily loaded run
 reaches 1.5x without anything being wrong, and the tripwire should be read as
 guarding the configuration it was measured at. Loosening the bound would hide
-that rather than fix it — the fix is damping the walk itself, which is open work.
+that rather than fix it — the fix is damping the walk itself, which is recorded
+as a decision (not for 1.0) in [rating-drift.md](./rating-drift.md).
 
 Both were checked by deliberately breaking the update: reinstating the additive
 rule fails the conservation test and the tripwire together, while raising
