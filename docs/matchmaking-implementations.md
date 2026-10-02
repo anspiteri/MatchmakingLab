@@ -121,11 +121,15 @@ half. The quality numbers are the ones worth watching, because they are the only
 things here that can tell you a matchmaker is doing badly:
 
 - **Favourite win rate** — of decided matches, how often the higher-rated side
-  won. Roughly 0.6 in a healthy run: above that means the matchmaker is
+  won. Roughly 0.64 in a healthy run: above that means the matchmaker is
   overconfident and pairing lopsided games, well below means results are not
   tracking its own ordering. Matches where both sides carry the same rating are
   excluded, since neither side was the favourite and the match says nothing about
-  overconfidence.
+  overconfidence. The figure sits well above 0.5 because a match is first to 3
+  and best-of-5 amplifies a modest per-round edge into a large match-level one;
+  0.64 corresponds to a per-round edge of about 0.575. It is also stable — 0.6442
+  and 0.6446 at two very different loads, and flat against the rating drift (see
+  [rating-drift.md](./rating-drift.md#why-064-and-not-050)).
 - **Rating accuracy** — correlation between estimated rating and hidden truth
   across players who have played. Should climb as the run proceeds.
 - **Rating / true spread** — the estimated and true spreads over the same played

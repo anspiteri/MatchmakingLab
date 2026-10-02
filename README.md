@@ -6,9 +6,11 @@
 
 ## Status
 
-**Version:** 0.1.0
+**Version:** 1.0.0
 
-This is an early-stage prototype. Version 0.1 signifies the project is still working towards a full vertical slice — an end-to-end, runnable example that demonstrates a complete matchmaking loop. Until that slice is delivered, expect the interface, behaviour and structure to change frequently and to be incomplete.
+This is a working prototype rather than a finished product. Version 1.0 marks the first end-to-end vertical slice: a complete, runnable matchmaking loop — players are generated, queued, matched on their own running estimate of skill, their matches are simulated against a hidden true skill, the estimates are updated from the results, and the quality of those estimates is measured and displayed live. One approach is implemented, Bradley-Terry.
+
+The 1.0 label is a statement about the loop being complete, not about the interface being finished. Expect the structure to keep changing, and treat the numbers in [docs/](./docs) as the record of what was measured rather than as a specification. Known limitations are written down rather than left to be discovered: the [rating drift](./docs/rating-drift.md) behind the leaderboard's estimated-skill column is the main one.
 
 <br>
 

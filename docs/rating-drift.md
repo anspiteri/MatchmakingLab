@@ -21,9 +21,9 @@ its own measurements, not inside a release.
 
 There is one caveat, and it is the reason this document exists rather than a
 two-line backlog entry: I found a plausible way the drift could be costing
-*pairing quality* and not just calibration, and I have not tested it. See
-[The open question](#the-open-question). If that test comes back badly, this
-decision should be revisited.
+*pairing quality* and not just calibration. I tested it at the 1.0 acceptance
+pass and found no effect — see [The open question](#the-open-question), which also
+records how weak that test is and what would settle it.
 
 ## What the drift is
 
@@ -113,7 +113,9 @@ Two consequences worth carrying:
 
 ## The open question
 
-**Untested. Treat the rest of this section as a hypothesis, not a finding.**
+**Tier 1 tested at the 1.0 pass: no effect found. Tier 2 untested. Read the
+result before the reasoning — the reasoning is what was worth testing, not what
+is established.**
 
 `_bt_probability(i, j) = i / (i + j)` is a function of the **estimates**
 (`strategy.py`). If the estimates are over-dispersed, two genuinely near-equal
@@ -136,9 +138,7 @@ than a calibration one, and would undermine reason 1 above.
 It also puts the favourite win rate in question. The analytics docs put the
 healthy ceiling near **0.6** and attribute it to the hidden-truth outcome model.
 If drift also inflates it, that ceiling is partly an artifact of the rating
-system rather than a property of the simulation. **I have not measured which.**
-The docs' attribution is currently the documented claim; the reasoning here is
-the reason to doubt it.
+system rather than a property of the simulation.
 
 ### The test
 
@@ -147,24 +147,74 @@ the reason to doubt it.
 each CSV.
 
 **Tier 1 — no code change.** The two rows of the table above with 119
-matches/player are matched on matches and differ in drift (1.03x vs 1.12x):
+matches/player are matched on matches and differ in drift:
 
 ```sh
-matchmakinglab --headless --ticks 2000 --players 150 --requests 10:10 \
-  --seed 1 --export /tmp/drift-150.csv
-matchmakinglab --headless --ticks 2000 --players 500 --requests 10:50 \
-  --seed 1 --export /tmp/drift-500.csv
+matchmakinglab --default --headless --ticks 2000 --players 150 --requests 10:10 \
+  --seed N --export /tmp/drift-150.csv
+matchmakinglab --default --headless --ticks 2000 --players 500 --requests 10:50 \
+  --seed N --export /tmp/drift-500.csv
 ```
 
-Small drift contrast, and the cleanest isolation. Population size also differs,
-so this is not a perfect control.
+Population size also differs, so this is not a perfect control.
 
 **Tier 2 — stronger signal, one temporary source edit.** Raise
-`LEARNING_RATE` in `strategy.py` to 0.05 and re-run the 150-player command as
-`/tmp/drift-r005.csv`. That is a 1.05x vs 1.71x drift contrast at an identical
-tick count. Revert the edit afterwards. The confound is that the learning rate
-also changes accuracy, which is why tier 1 is the cleaner comparison and tier 2
-is the one with the signal.
+`LEARNING_RATE` in `strategy.py` to 0.05 and re-run the 150-player command. That
+is a 1.05x vs 1.71x drift contrast at an identical tick count. Revert afterwards.
+The confound is that the learning rate also changes accuracy.
+
+### Tier 1 result (02/10/2026): flat
+
+| players | seed | drift | favourite win rate | accuracy |
+|---|---|---|---|---|
+| 150 | 1 | 1.026x | 0.6511 | 0.953 |
+| 150 | 2 | 1.028x | 0.6297 | 0.937 |
+| 150 | 3 | 1.119x | 0.6519 | 0.948 |
+| 500 | 1 | 1.118x | 0.6438 | 0.947 |
+| 500 | 2 | 0.991x | 0.6444 | 0.953 |
+| 500 | 3 | 0.996x | 0.6456 | 0.941 |
+
+**Favourite win rate does not rise with drift.** Group means are 0.6442 at 150
+players (mean drift 1.058x) and 0.6446 at 500 (1.035x) — indistinguishable. The
+clearest single case points the wrong way for the hypothesis: the 500-player run
+with the *highest* drift, 1.118x, reads 0.6438, while the two runs sitting below
+parity at 0.991x and 0.996x read 0.6444 and 0.6456. Within the 500-player group
+drift moves by 0.13x and the win rate moves by 0.002.
+
+So on this evidence the drift does **not** cost pairing quality, the 1.0 decision
+above stands, and the analytics attribution to the outcome model survives.
+
+**This is the weaker of the two tiers and should not be over-read.** The drift
+contrast is small, so this bounds the effect rather than excluding it; tier 2 at
+0.05 is the measurement that would settle it, and it needs a source edit. Until
+someone runs that, the honest status is "no evidence of harm at these
+magnitudes", not "shown to be harmless".
+
+### Why 0.64 and not 0.50
+
+The value is stable at ~0.644 across every configuration and seed, which is a
+strong hint that it is structural rather than a symptom. A match is first to 3
+(`POINTS_TO_WIN = 3`, measured mean length 4.04), and best-of-5 amplifies a modest
+per-round edge into a much larger match-level one:
+
+| Per-round win probability | Match win rate, first to 3 |
+|---|---|
+| 0.500 | 0.5000 |
+| 0.550 | 0.5931 |
+| 0.575 | 0.6385 |
+| 0.600 | 0.6826 |
+
+0.644 is what a per-round edge of about **0.575** produces. The matchmaker targets
+`|bt_probability - 50|` on a *per-round* basis, so a match-level 0.5 is not what it
+is aiming at, and the queue rarely offers a 0.5 pair at every tick — the greedy
+matcher takes the best available.
+
+**This is arithmetic consistent with the measurement, not a measurement of the
+chosen pairs' per-round probabilities.** Confirming it would mean exporting the
+distribution of estimated `bt_probability` for matched pairs. If it holds, the
+residual overconfidence is a queue-composition limit of the greedy matcher —
+which is the existing queue-policy backlog item — and not the rating system
+reporting on itself.
 
 **Reading the result.** Compare `favourite_win_rate` in the last row across the
 runs.
