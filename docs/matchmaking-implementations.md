@@ -96,7 +96,7 @@ whatever coordinate it happens in, and a longer run at 0.02 does eventually
 exceed parity. What is gone is the *systematic* part: the step no longer shrinks
 with skill level, so the low end no longer races ahead of the high end.
 
-**This ships in 1.0 undamped**, on the reasoning recorded in
+**This ships in 0.1 alpha undamped**, on the reasoning recorded in
 [rating-drift.md](./rating-drift.md) — the ordering is what the cost function acts
 on and it stays correct, so the residual is a calibration limitation rather than a
 defect. That document also carries an open question about whether the drift costs
@@ -121,11 +121,15 @@ half. The quality numbers are the ones worth watching, because they are the only
 things here that can tell you a matchmaker is doing badly:
 
 - **Favourite win rate** — of decided matches, how often the higher-rated side
-  won. Roughly 0.6 in a healthy run: above that means the matchmaker is
+  won. Roughly 0.64 in a healthy run: above that means the matchmaker is
   overconfident and pairing lopsided games, well below means results are not
   tracking its own ordering. Matches where both sides carry the same rating are
   excluded, since neither side was the favourite and the match says nothing about
-  overconfidence.
+  overconfidence. The figure sits well above 0.5 because a match is first to 3
+  and best-of-5 amplifies a modest per-round edge into a large match-level one;
+  0.64 corresponds to a per-round edge of about 0.575. It is also stable — 0.6442
+  and 0.6446 at two very different loads, and flat against the rating drift (see
+  [rating-drift.md](./rating-drift.md#why-064-and-not-050)).
 - **Rating accuracy** — correlation between estimated rating and hidden truth
   across players who have played. Should climb as the run proceeds.
 - **Rating / true spread** — the estimated and true spreads over the same played
@@ -195,7 +199,7 @@ residual drift is the right one. But it does mean a long or heavily loaded run
 reaches 1.5x without anything being wrong, and the tripwire should be read as
 guarding the configuration it was measured at. Loosening the bound would hide
 that rather than fix it — the fix is damping the walk itself, which is recorded
-as a decision (not for 1.0) in [rating-drift.md](./rating-drift.md).
+as a decision (not for 0.1 alpha) in [rating-drift.md](./rating-drift.md).
 
 Both were checked by deliberately breaking the update: reinstating the additive
 rule fails the conservation test and the tripwire together, while raising
@@ -204,4 +208,3 @@ conservation test passing.
 
 The precise curve belongs in this page, where it can be updated when the
 behaviour changes. The test only needs to notice if it changes by a lot.
-

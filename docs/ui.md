@@ -2,7 +2,7 @@
 
 ```
 ┌─────────────────────────────────┬──────────────────────────────────────┐
-│ strategy: bt   MatchmakingLab ver 0.10                                seed=1│
+│ strategy: bt   MatchmakingLab ver 0.1.0a0                             seed=1│
 ├─────────────────────────────────┬──────────────────────────────────────┤
 │ > generated player_1043         │Platform / State                      │
 │ > queued player_1043            │                                      │

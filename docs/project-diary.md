@@ -1,52 +1,66 @@
 # Project Diary
 ## Backlog
 ### Important
-0.1 Requisites
+* (**) decide the residual random-walk drift in the rating scale (promoted from Not as Important on 02/10/2026) — **the decision is recorded: 0.1 alpha ships undamped**, and [rating-drift.md](./rating-drift.md) has the rationale, the cost, and the test that would reverse it. What is left is the open question in that document: whether the drift costs *pairing quality* rather than only calibration. It is untested, and it is the strongest candidate for the next release
+
+0.1 Alpha Requisites
 * finish BT test module ✅
 * implement update player features to close loop ✅
 * Working vertical slice
 	- simulator ✅
 	- executable application ✅
-		- allow population size and request number to be easily configurable
+		- allow population size and request number to be easily configurable ✅ (landed 02/10 as `--players` / `--requests`)
 	- display
 		- add player population size to display ✅
 		- add basic player info (region, ping, skill-rating, to event feed) ✅
 		- add leaderboard tracking ✅
-	- accompanying minimal test suites
+	- accompanying minimal test suites ✅
 	- headless mode with logging to files or stdout ✅
 	- Request Generator
 		- add new player state transitions to codebase ✅
-		- change generator to operate over a range of requests instead of a fixed number
+		- change generator to operate over a range of requests instead of a fixed number ✅ (landed 02/10, same branch as the flags above)
 		- change feed display to differentiate NEW vs EXISTING requests ✅
-* verify module / acceptance testing
-	- possibly also create some intuition tests
-* polished readme, docs and visual demo / gifs
+* verify module / acceptance testing ✅ (02/10 — the "intuition tests" are the deliberate-breakage probes run against every fix this cycle; each is recorded in the log below with the mutations it catches)
+* polished readme and docs ✅
 
 Future
-* analyse current architecture and determine pros and cons
-* (**)implement second BT optimisation model
+* analyse current architecture and determine pros and cons — **partly done.** `docs/architecture.md` has a General Design Notes section covering the feature/generator split, the sim/display boundary and configuration, but it is a description rather than an assessment. Worth doing properly as a distinct piece of writing rather than a tick
+* (**)implement second BT optimisation model — stays open. The `(**)` still means what it meant on 30/09: the second optimisation lives inside the BT pairing loop rather than in the rating update, so it is independent of the drift decision and does not need to wait on it
 
 ### Not as Important
-* (**) think about whether the residual random-walk drift in the rating scale can be damped, e.g. a step that decays with a player's match count (01/10/2026) — **decision recorded: not for 1.0**, and the one open question that could reverse it is written up in [rating-drift.md](./rating-drift.md). Promoted to Important on 02/10/2026, since it is the strongest candidate for what 1.1 does next
 * re-check the dispersion tripwire's 1.5x bound at the 02/10 defaults, since 500 players at 4000 ticks now measures 1.64x (02/10/2026) — see [rating-drift.md](./rating-drift.md#why-the-drift-is-not-a-bug); the bound is deliberately not to be loosened, because loosening it hides this rather than fixing it
 * double-check completeness of bt match model math component in test suite (21/08/2026)
 * double-check and possibly document the bt model match tests, ensuring the tests are flexible to changing weights (21/08/2026)
 * assess whether it's worth changing the bt greedy approach to employ a queue-policy that halts matching after a certain time  (24/08/2026)
-* think about adjusting the BT skill-rating system to be log-likelihood based (26/08/2026)
 
 ## Log
 02/10/2026
-Recorded the decision to ship 1.0 with the residual rating drift unfixed, in a new `docs/rating-drift.md`. It was a backlog line — "think about whether the residual random-walk drift in the rating scale can be damped" — and it is now a decision with a rationale, a cost, and a test that would reverse it.
+Prepared 0.1 alpha. Version set to 0.1.0a0, and the README's Status section rewritten — it had described 0.1 as "still working towards a full vertical slice", which stopped being true several phases ago. The alpha label reflects that the loop runs, while the interface and structure are still evolving.
+
+The acceptance pass earned its place by finding a documented number that was wrong. I ran the real CLI for 2000 ticks at the current defaults, seed 1, exported to CSV, and read the last row: `rating_accuracy 0.947` and `rating_spread / true_skill_spread = 134.12 / 120.0 = 1.118x`. Both match the writeup exactly, so the calibration tables are still reproducible at the new defaults. But `favourite_win_rate` came back 0.644, and the analytics docs put the healthy figure at "roughly 0.6" with anything above it meaning the matchmaker is overconfident. The docs were wrong, or the measurement was, and one of those had to give.
+
+It was the docs. The value is 0.6442 at 150 players and 0.6446 at 500 — stable to within 0.0004 across a 3x change in load — and it is ~0.64 for a structural reason I had never written down. A match is first to 3, and best-of-5 turns a modest per-round edge into a much larger match-level one: a per-round 0.575 wins the match 0.6385 of the time. The matchmaker targets `|bt_probability - 50|` on a per-round basis, so a match-level 0.5 was never what it was aiming for. The docs said "0.6" when they meant "somewhere around 0.64", and a reader checking their own run against that would have concluded their matchmaker was overconfident when it was fine. I have marked the arithmetic as consistent-with rather than measured, because confirming it means exporting the distribution of estimated per-round probabilities for matched pairs, which I did not do.
+
+That number was also the quantity the drift hypothesis predicts should move, so the acceptance pass doubled as the first tier of that test. It does not: across three seeds at two loads, favourite win rate is flat against drift, and the sharpest case points the wrong way — the highest-drift run at 1.118x reads 0.6438 while two runs below parity at 0.991x and 0.996x read 0.6444 and 0.6456. The 0.1 alpha decision to ship undamped therefore survives its own reversal test. I have written it up as no-evidence-of-harm rather than proven-harmless, because the drift contrast in that test is small and the decisive version needs a `LEARNING_RATE` edit I did not make.
+
+The backlog sweep closed more than the version bump. Two items had been done for days and were still listed as open: the generator's request range (landed 02/10) and, more embarrassingly, "think about adjusting the BT skill-rating system to be log-likelihood based", which *is* the log-space update from 01/10 and had been sitting in the backlog the whole time since. A backlog is only worth maintaining if it is swept, and an item that was completed and left open is worse than one that was never started, because it reads as pending work. One line I am deliberately not ticking: the visual demo / gifs. Everything else on the 0.1 list is done and verified, and ticking that one because it is the last one would be exactly the wrong reason.
+
+Also found while checking links: `matchmaking-implementations.md` points at `../references/bibliography.md#bradley-terry-1952`, and that anchor has never existed — the bibliography is a flat list with no per-paper headings. Pre-existing, not from this cycle, and left alone deliberately: fixing it means restructuring a document nobody asked me to touch, which is a worse trade than a dead anchor in a reference list.
+
+02/10/2026
+Recorded the decision to ship 0.1 alpha with the residual rating drift unfixed, in a new `docs/rating-drift.md`. It was a backlog line — "think about whether the residual random-walk drift in the rating scale can be damped" — and it is now a decision with a rationale, a cost, and a test that would reverse it.
 
 Shipping without the fix is defensible on the measurements: the systematic part of the drift was already removed by the log-space update, what is left is the irreducible √(matches) walk with no restoring force to add, the ordering stays correct at 0.95 correlation, and the geometric mean sits at exactly 100 so there is no level shift. Damping is a change to the headline algorithm that re-measures every calibration table in the writeup, which is a branch of its own rather than something to do inside a release.
 
 What I got wrong first is the part worth writing down, because I had recommended the opposite twice. I argued the drift was cosmetic — a calibration concern that does not touch the decisions the matchmaker makes, since it acts on the *ordering* of estimates rather than their magnitude. That is a real argument and it is also incomplete, because I had not followed the estimates into the cost function. `_bt_probability(i, j) = i / (i + j)` is a ratio of estimates, so over-dispersed estimates push the estimated win probability further from 50% than the truth warrants, and `_competitiveness_score = |bt_probability - 50|` then scores a genuinely even match as lopsided. Two players whose true skills are 100 and 102 cost 0 when the estimates are clean and 7 when drift has stretched them to 100 and 130. Same match, same players. If that generalises, the drift does not merely misreport a number, it makes the matchmaker overconfident and steers it away from real 50/50 contests, and my "the decisions depend on order, not magnitude" was wrong.
 
-I have not tested it, and I want to be careful not to record a suspicion as a finding, because the diary has been a place where I have had to retract claims before. So the writeup marks it explicitly as a hypothesis, separate from everything above it, and gives the test: two exports at matched matches-per-player, one at 1.03x drift and one at 1.12x, comparing `favourite_win_rate` in the last row. It needs no new code, because `--export` already writes the four quality columns. Flat across the contrast means the healthy 0.6 really is the outcome model's ceiling and the decision stands; rising with drift means it belongs in 1.1.
+I have not tested it, and I want to be careful not to record a suspicion as a finding, because the diary has been a place where I have had to retract claims before. So the writeup marks it explicitly as a hypothesis, separate from everything above it, and gives the test: two exports at matched matches-per-player, one at 1.03x drift and one at 1.12x, comparing `favourite_win_rate` in the last row. It needs no new code, because `--export` already writes the four quality columns. Flat across the contrast means the healthy 0.6 really is the outcome model's ceiling and the decision stands; rising with drift means it belongs in a later release.
 
 The same suspicion lands on the favourite win rate's attribution. The analytics docs put the healthy ceiling near 0.6 and credit the hidden-truth outcome model, and I have been repeating that. If the drift also inflates it, part of that ceiling is the rating system reporting its own overconfidence back to itself, which is the same failure shape as the 0.974 bug from the analytics entry — a metric reading the rating rule back to itself — arriving by a different route. I do not know, and the honest position is that the current attribution is a documented claim rather than a measured one.
 
-The backlog item is promoted to Important on the strength of that, not on the drift itself. It is the strongest candidate for what 1.1 does, and it now has somewhere to point rather than being a passing thought.
+**Tested later the same day — the suspicion did not hold.** The acceptance pass ran tier 1 of the test in the writeup and favourite win rate came back flat against drift across three seeds at two loads, so the 0.6 attribution stands and the 0.1 alpha decision is not reversed. The reasoning above is left as written because it is the reason the test was worth running. See the 0.1 alpha entry above and [rating-drift.md](./rating-drift.md#tier-1-result-02102026-flat).
+
+The backlog item is promoted to Important on the strength of that, not on the drift itself. It is the strongest candidate for what a later release does, and it now has somewhere to point rather than being a passing thought.
 
 02/10/2026
 Fixed the two wall-clock figures (branch `dev/1.0-runtime-export`), the first half of the runtime/export phase. `sim_seconds` is now real elapsed run time, excluding paused time, and independent of the speed multiplier. `request_rate` is unchanged as a formula — total requests over `sim_seconds`, i.e. average arrivals per real second.

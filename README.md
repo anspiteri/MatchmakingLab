@@ -1,14 +1,16 @@
 <h1 align="center">Matchmaking Lab</h1>
 
+<p align="center"><a href="https://github.com/anspiteri/MatchmakingLab/tags"><img alt="Latest version tag" src="https://img.shields.io/github/v/tag/anspiteri/MatchmakingLab?include_prereleases=true&amp;sort=date"></a></p>
+
 <p align="center">A platform for prototyping, analysing &amp; exploring different matchmaking approaches for competitive online games.</p>
+
+<p align="center"><img src="assets/demo-screenshot.png" alt="Matchmaking Lab terminal interface showing the event feed, simulation statistics, and leaderboard" width="900"></p>
 
 <br>
 
 ## Status
 
-**Version:** 0.1.0
-
-This is an early-stage prototype. Version 0.1 signifies the project is still working towards a full vertical slice — an end-to-end, runnable example that demonstrates a complete matchmaking loop. Until that slice is delivered, expect the interface, behaviour and structure to change frequently and to be incomplete.
+This is an early alpha prototype with a runnable matchmaking loop. It generates players, queues and matches them, simulates results, updates estimated skill, and shows live measurements. The Bradley-Terry approach is currently implemented; the interface and project structure may change.
 
 <br>
 
@@ -52,15 +54,23 @@ MatchmakingLab/
 <br>
 
 ## Architecture
-The project uses a **strategy design pattern** to modularise different matchmaking approaches behind a single, generalisable platform.
+Matchmaking approaches plug into a shared simulation platform through a strategy and its request generator. The simulation harness coordinates player requests, matching, and simulated outcomes, then produces snapshots for the display layer.
 
-A `MatchmakingStrategy` defines how players are matched (setup_features, running the matching algorithm, and updating features on finished matches), while a tightly-coupled `RequestGenerator` produces the input data a given approach expects. The `MatchmakerFactory` builds these tightly-coupled objects together so they are always configured consistently. Currently implemented approaches live under `matchmakers/bradley_terry/`.
-
-A `SimHarness` (see `platform/sim_harness.py`) owns the full runtime composition — generator, platform, simulator and `PlatformState` — and exposes a single `step()` that returns a read-only `SimSnapshot`. The display layer only ever sees these snapshots, never the sim internals, so the simulation can be refactored freely beneath that boundary. That display layer is a [Textual](https://github.com/Textualize/textual) TUI in `matchmakinglab/ui/` driven by a tick timer, plus a headless mode that logs tick stats to stdout without the TUI. Four panels sit in two columns: the event feed on the left, and population state, analytics and a top-100 player leaderboard on the right. The leaderboard ranks by estimated rating and shows each player's hidden true skill beside it, which is display-only — nothing in the matching or rating path reads it. The estimated column is trustworthy for *ordering* but not for magnitude: the rating scale spreads wider than the truth it tracks as a run goes on, and the `Rating / true spread` readout in the analytics panel reports the gap. This is a known, measured limitation rather than a defect — see [rating-drift.md](./docs/rating-drift.md) for the numbers and why 1.0 ships with it.
-
-Configuration is driven from the CLI entrypoint (`cli.py`), which offers an interactive guided setup on startup as well as promptless flag-based booting. It covers two kinds of configuration: a strategy's own sub-configuration (which is positional and enum-only, and generated from each strategy's declaration), and the simulation setup shared by every strategy (`--players`, `--requests`), which is declared once and drives both the flags and the guided-setup questions.
+The CLI configures a run and presents it through either a [Textual](https://github.com/Textualize/textual) interface or headless output. Both use the same simulation; the display reads snapshots rather than changing simulation state.
 
 For more details on each module, see [architecture](./docs/architecture.md).
+
+<br>
+
+## Releases
+Download packaged versions from the [GitHub Releases](https://github.com/anspiteri/MatchmakingLab/releases) page. For normal use, download the `.whl` file, install it in a Python environment, then run the CLI:
+
+```bash
+python -m pip install ./matchmakinglab-0.1.0a0-py3-none-any.whl
+matchmakinglab
+```
+
+The packaged `.tar.gz` can also be installed with `pip`. Each release additionally includes GitHub-generated **Source code (zip)** and **Source code (tar.gz)** snapshots containing the repository exactly as it was at the release tag. Extract either snapshot if you want to inspect that version or install it from source with `python -m pip install .`.
 
 <br>
 
