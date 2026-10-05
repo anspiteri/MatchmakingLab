@@ -1,6 +1,6 @@
 <h1 align="center">Matchmaking Lab</h1>
 
-<p align="center"><a href="https://github.com/anspiteri/MatchmakingLab/tags"><img alt="Latest version tag" src="https://img.shields.io/github/v/tag/anspiteri/MatchmakingLab?include_prereleases=true&amp;sort=date"></a></p>
+<p align="center"><a href="https://github.com/anspiteri/MatchmakingLab/tags"><img alt="Latest version tag" src="https://img.shields.io/github/v/tag/anspiteri/MatchmakingLab?sort=semver"></a></p>
 
 <p align="center">A platform for prototyping, analysing &amp; exploring different matchmaking approaches for competitive online games.</p>
 
